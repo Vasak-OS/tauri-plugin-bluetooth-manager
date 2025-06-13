@@ -95,20 +95,53 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                 Ok(h) => h,
                 Err(e) => {
                     eprintln!("[bluetooth-plugin] Failed to get message header: {:?}", e);
-                    return; // O `continue;` si el error no es fatal para el stream
+                    // Decide if to continue or break. For now, continue to next message.
+                    continue;
                 }
             };
 
-            // Correctly get Option<&str> then compare
-            let sender_str_opt = header.sender().and_then(|s_unique_name_ref| Some(s_unique_name_ref.as_str()));
+            // header.sender() returns Result<Option<UniqueNameRef<'_>>, zbus::Error>
+            // We want Option<&str> for comparison
+            let sender_res_opt_ref = header.sender(); // Result<Option<UniqueNameRef<'_>>, Error>
+            let sender_opt_str = match sender_res_opt_ref {
+                Ok(Some(unique_name_ref)) => Some(unique_name_ref.as_str()),
+                Ok(None) => None,
+                Err(e) => {
+                    eprintln!("[bluetooth-plugin] Error getting sender from header: {:?}", e);
+                    None // Or handle error more explicitly
+                }
+            };
             
-            if msg.message_type() == MessageType::Signal && sender_str_opt == Some("org.bluez") {
-              // Correctly map Option<&TypeRef> to Option<String>
-              let path_str_opt = header.path().and_then(|p_ref| Some(p_ref.as_str().to_string()));
-              let interface_name_opt = header.interface().and_then(|i_ref| Some(i_ref.as_str().to_string()));
-              let member_name_opt = header.member().and_then(|m_ref| Some(m_ref.as_str().to_string()));
+            if msg.message_type() == MessageType::Signal && sender_opt_str == Some("org.bluez") {
+              // path(), interface(), member() also return Result<Option<TypeRef>, Error>
+              // We want Option<String>
+              let path_opt_string = match header.path() {
+                Ok(Some(p_ref)) => Some(p_ref.as_str().to_string()),
+                Ok(None) => None,
+                Err(e) => {
+                    eprintln!("[bluetooth-plugin] Error getting path from header: {:?}", e);
+                    None
+                }
+              };
+              let interface_opt_string = match header.interface() {
+                Ok(Some(i_ref)) => Some(i_ref.as_str().to_string()),
+                Ok(None) => None,
+                Err(e) => {
+                    eprintln!("[bluetooth-plugin] Error getting interface from header: {:?}", e);
+                    None
+                }
+              };
+              let member_opt_string = match header.member() {
+                Ok(Some(m_ref)) => Some(m_ref.as_str().to_string()),
+                Ok(None) => None,
+                Err(e) => {
+                    eprintln!("[bluetooth-plugin] Error getting member from header: {:?}", e);
+                    None
+                }
+              };
 
-              match (interface_name_opt.as_deref(), member_name_opt.as_deref()) {
+              // Now match on Option<&str> by using .as_deref() on Option<String>
+              match (interface_opt_string.as_deref(), member_opt_string.as_deref()) {
             (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesAdded")) => {
               match msg.body::<(ObjectPath<'_>, HashMap<String, HashMap<String, OwnedValue>>)>() {
                 Ok((object_path, interfaces_and_properties)) => {
@@ -146,7 +179,8 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
               }
             }
             (Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")) => {
-              if let Some(p_str) = path_str_opt {
+              // path_opt_string is Option<String>
+              if let Some(p_str) = path_opt_string { // p_str is String
                 match msg.body::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>() {
                   Ok((changed_interface_name, _changed_properties, _invalidated_properties)) => {
                     if changed_interface_name == "org.bluez.Adapter1" {
@@ -177,7 +211,7 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                   }
                 }
               } else {
-                eprintln!("[bluetooth-plugin] PropertiesChanged signal received without a valid path.");
+                eprintln!("[bluetooth-plugin] PropertiesChanged signal received without a valid path (or error fetching path).");
                 app.emit("bluetooth-error", "PropertiesChanged signal without path").unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit bluetooth-error: {}", err));
               }
             }
@@ -208,7 +242,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
 }
 
 impl<R: Runtime> BluetoothManager<R> {
-  // Asumiendo que PingRequest y PingResponse están definidos en models.rs
   pub fn ping(&self, payload: crate::models::PingRequest) -> CrateResult<crate::models::PingResponse> {
     Ok(crate::models::PingResponse {
       value: payload.value,
