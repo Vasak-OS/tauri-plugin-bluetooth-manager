@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use zbus::zvariant::OwnedObjectPath; // Necesario para el campo Adapter en DeviceInfo
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
