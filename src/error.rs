@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug)] // Añadido Debug
 pub enum Error {
     Zbus(zbus::Error),
-    ZbusVariant(zbus::zvariant::Error),
+    Zvariant(zbus::zvariant::Error), // Add this line
     // Otros errores específicos de tu aplicación pueden ir aquí
     CommandError(String),
     NotFound(String),
@@ -14,7 +14,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Zbus(e) => Some(e),
-            Error::ZbusVariant(e) => Some(e),
+            Error::Zvariant(e) => Some(e), // Add this line
             _ => None,
         }
     }
@@ -24,7 +24,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Error::Zbus(e) => write!(f, "D-Bus error: {}", e),
-            Error::ZbusVariant(e) => write!(f, "D-Bus variant error: {}", e),
+            Error::Zvariant(e) => write!(f, "D-Bus variant error: {}", e), // Add this line
             Error::CommandError(s) => write!(f, "Command error: {}", s),
             Error::NotFound(s) => write!(f, "Not found: {}", s),
         }
@@ -50,7 +50,7 @@ impl From<zbus::Error> for Error {
 
 impl From<zbus::zvariant::Error> for Error {
     fn from(err: zbus::zvariant::Error) -> Self {
-        Error::ZbusVariant(err)
+        Error::Zvariant(err) // Add this line
     }
 }
 
