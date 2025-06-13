@@ -54,5 +54,14 @@ impl From<zbus::zvariant::Error> for Error {
     }
 }
 
+impl From<std::convert::Infallible> for Error {
+    fn from(_err: std::convert::Infallible) -> Self {
+        // This case should ideally not be reached if Infallible means "cannot fail".
+        // However, to satisfy the trait bound for `?`, we need to provide a variant.
+        // Using CommandError or a new dedicated variant might be appropriate.
+        Error::CommandError("Infallible error encountered".to_string())
+    }
+}
+
 // ... (tu Result personalizado si lo tienes, o puedes usar std::result::Result<T, crate::Error>)
 pub type Result<T> = std::result::Result<T, Error>;
