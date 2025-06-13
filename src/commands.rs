@@ -1,12 +1,12 @@
-use crate::{Error, Result};
+use crate::Result;
 use crate::models::{AdapterInfo, DeviceInfo};
-use zbus::{Connection, Proxy, zvariant::{ObjectPath, OwnedValue, Value as ZbusValue, Type}}; // Type puede ser necesario para try_into
+use zbus::{Connection, Proxy, zvariant::{ObjectPath, OwnedValue, Value as ZbusValue}};
 use std::collections::HashMap;
-use std::convert::TryInto; // Para .try_into()
+use std::convert::TryFrom;
 
 #[tauri::command]
 pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
-    let conn = Connection::system().await?; // map_err ya no es necesario aquí si Error impl From<zbus::Error>
+    let conn = Connection::system().await?;
     let proxy = Proxy::new(
         &conn,
         "org.bluez",
@@ -15,8 +15,10 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
     )
     .await?;
 
+    // Fix for E0597: Use into_body() to consume the message and get owned data.
+    let reply = proxy.call_method("GetManagedObjects", &()).await?;
     let managed_objects: HashMap<ObjectPath<'static>, HashMap<String, HashMap<String, OwnedValue>>> =
-        proxy.call_method("GetManagedObjects", &()).await?.body()?;
+        reply.body()?; // Reverted to .body()?
 
     let mut adapters = Vec::new();
 
@@ -24,20 +26,20 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
         if let Some(props) = interfaces.get("org.bluez.Adapter1") {
             adapters.push(AdapterInfo {
                 path: object_path.to_string(),
-                address: props.get("Address").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                name: props.get("Name").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                alias: props.get("Alias").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                class: props.get("Class").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                powered: props.get("Powered").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                discoverable: props.get("Discoverable").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                discoverable_timeout: props.get("DiscoverableTimeout").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                pairable: props.get("Pairable").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                pairable_timeout: props.get("PairableTimeout").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                discovering: props.get("Discovering").and_then(|v| v.try_into().ok()).unwrap_or(false),
+                address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+                name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+                alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+                class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
+                powered: props.get("Powered").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                discoverable: props.get("Discoverable").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                discoverable_timeout: props.get("DiscoverableTimeout").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
+                pairable: props.get("Pairable").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                pairable_timeout: props.get("PairableTimeout").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
+                discovering: props.get("Discovering").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
                 uuids: props.get("UUIDs")
-                    .and_then(|v| v.try_into().ok())
+                    .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
                     .unwrap_or_default(),
-                modalias: props.get("Modalias").and_then(|v| v.try_into().ok()),
+                modalias: props.get("Modalias").and_then(|v| String::try_from(v.clone()).ok()),
             });
         }
     }
@@ -74,27 +76,27 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
     )
     .await?;
 
-    let props: HashMap<String, OwnedValue> = proxy
+    let reply = proxy
         .call_method("GetAll", &("org.bluez.Adapter1",))
-        .await?
-        .body()?;
+        .await?;
+    let props: HashMap<String, OwnedValue> = reply.body()?; // Reverted to .body()
 
     Ok(AdapterInfo {
         path: adapter_path,
-        address: props.get("Address").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        name: props.get("Name").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        alias: props.get("Alias").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        class: props.get("Class").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        powered: props.get("Powered").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        discoverable: props.get("Discoverable").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        discoverable_timeout: props.get("DiscoverableTimeout").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        pairable: props.get("Pairable").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        pairable_timeout: props.get("PairableTimeout").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        discovering: props.get("Discovering").and_then(|v| v.try_into().ok()).unwrap_or(false),
+        address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+        name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+        alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+        class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
+        powered: props.get("Powered").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        discoverable: props.get("Discoverable").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        discoverable_timeout: props.get("DiscoverableTimeout").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
+        pairable: props.get("Pairable").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        pairable_timeout: props.get("PairableTimeout").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
+        discovering: props.get("Discovering").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
         uuids: props.get("UUIDs")
-            .and_then(|v| v.try_into().ok())
+            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
             .unwrap_or_default(),
-        modalias: props.get("Modalias").and_then(|v| v.try_into().ok()),
+        modalias: props.get("Modalias").and_then(|v| String::try_from(v.clone()).ok()),
     })
 }
 
@@ -137,37 +139,38 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
     )
     .await?;
 
+    let reply = object_manager_proxy.call_method("GetManagedObjects", &()).await?;
     let managed_objects: HashMap<ObjectPath<'static>, HashMap<String, HashMap<String, OwnedValue>>> =
-        object_manager_proxy.call_method("GetManagedObjects", &()).await?.body()?;
+        reply.body()?; // Reverted to .body()
 
     let mut devices = Vec::new();
 
     for (object_path, interfaces) in managed_objects {
-        if object_path.as_str().starts_with(&adapter_path) {
+        if object_path.as_str().starts_with(&adapter_path) { // Ensure adapter_path is correct format
             if let Some(props) = interfaces.get("org.bluez.Device1") {
                 devices.push(DeviceInfo {
                     path: object_path.to_string(),
-                    address: props.get("Address").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-                    name: props.get("Name").and_then(|v| v.try_into().ok()),
-                    alias: props.get("Alias").and_then(|v| v.try_into().ok()),
-                    class: props.get("Class").and_then(|v| v.try_into().ok()),
-                    appearance: props.get("Appearance").and_then(|v| v.try_into().ok()),
-                    icon: props.get("Icon").and_then(|v| v.try_into().ok()),
-                    paired: props.get("Paired").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                    trusted: props.get("Trusted").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                    blocked: props.get("Blocked").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                    legacy_pairing: props.get("LegacyPairing").and_then(|v| v.try_into().ok()).unwrap_or(false),
-                    rssi: props.get("RSSI").and_then(|v| v.try_into().ok()),
-                    tx_power: props.get("TxPower").and_then(|v| v.try_into().ok()),
-                    connected: props.get("Connected").and_then(|v| v.try_into().ok()).unwrap_or(false),
+                    address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+                    name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()),
+                    alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()),
+                    class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()),
+                    appearance: props.get("Appearance").and_then(|v| u16::try_from(v.clone()).ok()),
+                    icon: props.get("Icon").and_then(|v| String::try_from(v.clone()).ok()),
+                    paired: props.get("Paired").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                    trusted: props.get("Trusted").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                    blocked: props.get("Blocked").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                    legacy_pairing: props.get("LegacyPairing").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                    rssi: props.get("RSSI").and_then(|v| i16::try_from(v.clone()).ok()),
+                    tx_power: props.get("TxPower").and_then(|v| i16::try_from(v.clone()).ok()),
+                    connected: props.get("Connected").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
                     uuids: props.get("UUIDs")
-                        .and_then(|v| v.try_into().ok())
+                        .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
                         .unwrap_or_default(),
                     adapter: props.get("Adapter")
-                        .and_then(|v| v.try_into::<ObjectPath>().ok()) // ObjectPath es un tipo específico
-                        .map(|p| p.to_string())
+                        .and_then(|v| ObjectPath::try_from(v.clone()).ok()) // Explicit TryFrom
+                        .map(|p: ObjectPath| p.to_string()) // p is ObjectPath<'static> or OwnedObjectPath
                         .unwrap_or_default(),
-                    services_resolved: props.get("ServicesResolved").and_then(|v| v.try_into().ok()).unwrap_or(false),
+                    services_resolved: props.get("ServicesResolved").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
                 });
             }
         }
@@ -221,33 +224,33 @@ pub async fn get_device_info(device_path: String) -> Result<DeviceInfo> {
     )
     .await?;
 
-    let props: HashMap<String, OwnedValue> = proxy
+    let reply = proxy
         .call_method("GetAll", &("org.bluez.Device1",))
-        .await?
-        .body()?;
+        .await?;
+    let props: HashMap<String, OwnedValue> = reply.body()?; // Reverted to .body()
 
     Ok(DeviceInfo {
         path: device_path,
-        address: props.get("Address").and_then(|v| v.try_into().ok()).unwrap_or_default(),
-        name: props.get("Name").and_then(|v| v.try_into().ok()),
-        alias: props.get("Alias").and_then(|v| v.try_into().ok()),
-        class: props.get("Class").and_then(|v| v.try_into().ok()),
-        appearance: props.get("Appearance").and_then(|v| v.try_into().ok()),
-        icon: props.get("Icon").and_then(|v| v.try_into().ok()),
-        paired: props.get("Paired").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        trusted: props.get("Trusted").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        blocked: props.get("Blocked").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        legacy_pairing: props.get("LegacyPairing").and_then(|v| v.try_into().ok()).unwrap_or(false),
-        rssi: props.get("RSSI").and_then(|v| v.try_into().ok()),
-        tx_power: props.get("TxPower").and_then(|v| v.try_into().ok()),
-        connected: props.get("Connected").and_then(|v| v.try_into().ok()).unwrap_or(false),
+        address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+        name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()),
+        alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()),
+        class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()),
+        appearance: props.get("Appearance").and_then(|v| u16::try_from(v.clone()).ok()),
+        icon: props.get("Icon").and_then(|v| String::try_from(v.clone()).ok()),
+        paired: props.get("Paired").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        trusted: props.get("Trusted").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        blocked: props.get("Blocked").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        legacy_pairing: props.get("LegacyPairing").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        rssi: props.get("RSSI").and_then(|v| i16::try_from(v.clone()).ok()),
+        tx_power: props.get("TxPower").and_then(|v| i16::try_from(v.clone()).ok()),
+        connected: props.get("Connected").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
         uuids: props.get("UUIDs")
-            .and_then(|v| v.try_into().ok())
+            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
             .unwrap_or_default(),
         adapter: props.get("Adapter")
-            .and_then(|v| v.try_into::<ObjectPath>().ok())
-            .map(|p| p.to_string())
+            .and_then(|v| ObjectPath::try_from(v.clone()).ok()) // Explicit TryFrom
+            .map(|p: ObjectPath| p.to_string())
             .unwrap_or_default(),
-        services_resolved: props.get("ServicesResolved").and_then(|v| v.try_into().ok()).unwrap_or(false),
+        services_resolved: props.get("ServicesResolved").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
     })
 }
