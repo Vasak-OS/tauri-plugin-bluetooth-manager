@@ -1,6 +1,5 @@
 use crate::Result;
 use crate::models::{AdapterInfo, DeviceInfo};
-// Use OwnedObjectPath for the initial deserialization of GetManagedObjects
 use zbus::{Connection, Proxy, zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value as ZbusValue, from_slice, EncodingContext}};
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
@@ -18,8 +17,6 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
 
     let reply_message = proxy.call_method("GetManagedObjects", &()).await?;
     
-    // Step 1: Deserialize into Vec<(OwnedObjectPath, OwnedValue)>
-    // OwnedObjectPath is explicitly 'static and owns its data.
     let raw_managed_objects: Vec<(OwnedObjectPath, OwnedValue)> = reply_message.body()?;
 
     let mut managed_objects: HashMap<ObjectPath<'static>, HashMap<String, HashMap<String, OwnedValue>>> = HashMap::new();
@@ -27,8 +24,6 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
     for (owned_path, interfaces_value) in raw_managed_objects {
         let interfaces_map: HashMap<String, HashMap<String, OwnedValue>> = 
             interfaces_value.try_into()?;
-        // Convert OwnedObjectPath to ObjectPath<'static> for the HashMap key.
-        // OwnedObjectPath can be converted into ObjectPath<'static>.
         managed_objects.insert(owned_path.into(), interfaces_map);
     }
 
@@ -39,7 +34,6 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
             adapters.push(AdapterInfo {
                 path: object_path.to_string(),
                 address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-                // Corrected: name is String, so unwrap_or_default if Option results
                 name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(), 
                 alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
                 class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
@@ -70,7 +64,6 @@ pub async fn set_adapter_powered(adapter_path: String, powered: bool) -> Result<
     )
     .await?;
 
-    // Ensure ZbusValue is correctly namespaced or imported
     proxy
         .call_method(
             "Set",
@@ -93,7 +86,6 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
 
     let reply_message = proxy.call_method("GetAll", &("org.bluez.Adapter1",)).await?;
     
-    // Keep using from_slice for HashMap<String, OwnedValue> as it seemed to work for this simpler type
     let body_bytes_owned: Vec<u8> = reply_message.body_as_bytes()?.to_vec();
     let ctxt = EncodingContext::<byteorder::NativeEndian>::new_dbus(0);
     let props: HashMap<String, OwnedValue> = from_slice(&body_bytes_owned, ctxt)?;
@@ -101,7 +93,6 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
     Ok(AdapterInfo {
         path: adapter_path,
         address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-        // Corrected: name is String
         name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
         alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
         class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
@@ -124,8 +115,8 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
     let proxy = Proxy::new(
         &conn,
         "org.bluez",
-        adapter_path.as_str(), 
-        "org.bluez.Adapter1",  
+        adapter_path.as_str(),
+        "org.bluez.Adapter1",
     )
     .await?;
     proxy.call_method("StartDiscovery", &()).await?;
@@ -138,8 +129,8 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
     let proxy = Proxy::new(
         &conn,
         "org.bluez",
-        adapter_path.as_str(), 
-        "org.bluez.Adapter1",  
+        adapter_path.as_str(),
+        "org.bluez.Adapter1",
     )
     .await?;
     proxy.call_method("StopDiscovery", &()).await?;
@@ -159,7 +150,6 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
 
     let reply_message = object_manager_proxy.call_method("GetManagedObjects", &()).await?;
     
-    // Step 1: Deserialize into Vec<(OwnedObjectPath, OwnedValue)>
     let raw_managed_objects: Vec<(OwnedObjectPath, OwnedValue)> = reply_message.body()?;
 
     let mut managed_objects: HashMap<ObjectPath<'static>, HashMap<String, HashMap<String, OwnedValue>>> = HashMap::new();
@@ -178,7 +168,6 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
                 devices.push(DeviceInfo {
                     path: object_path.to_string(),
                     address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-                    // Corrected: DeviceInfo.name is Option<String>
                     name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()),
                     alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()),
                     class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()),
@@ -219,7 +208,6 @@ pub async fn get_device_info(device_path: String) -> Result<DeviceInfo> {
 
     let reply_message = proxy.call_method("GetAll", &("org.bluez.Device1",)).await?;
 
-    // Keep using from_slice for HashMap<String, OwnedValue>
     let body_bytes_owned: Vec<u8> = reply_message.body_as_bytes()?.to_vec();
     let ctxt = EncodingContext::<byteorder::NativeEndian>::new_dbus(0);
     let props: HashMap<String, OwnedValue> = from_slice(&body_bytes_owned, ctxt)?;
@@ -227,7 +215,6 @@ pub async fn get_device_info(device_path: String) -> Result<DeviceInfo> {
     Ok(DeviceInfo {
         path: device_path,
         address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-        // Corrected: DeviceInfo.name is Option<String>
         name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()),
         alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()),
         class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()),
@@ -251,7 +238,6 @@ pub async fn get_device_info(device_path: String) -> Result<DeviceInfo> {
     })
 }
 
-// Placeholder stubs for missing commands (ensure these are implemented or correctly defined)
 #[tauri::command]
 pub async fn list_paired_devices(_adapter_path: String) -> Result<Vec<DeviceInfo>> {
     // TODO: Implement

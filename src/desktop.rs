@@ -1,24 +1,21 @@
 use futures::StreamExt;
-use tauri::{AppHandle, Manager, Runtime, plugin::PluginApi, Emitter}; // Emitter might be for window-specific, Manager for global
+use tauri::{AppHandle, Manager, Runtime, plugin::PluginApi, Emitter};
 use zbus::{Connection, MessageStream, MessageType, zvariant::{ObjectPath, OwnedValue, Value as ZbusValue}};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
 use crate::models::*;
 use crate::Result as CrateResult;
-use crate::commands::{get_adapter_state, get_device_info}; // Added missing imports
-use crate::Config; // Import Config from crate root
+use crate::commands::{get_adapter_state, get_device_info};
+use crate::Config;
 
-#[derive(Clone)] // BluetoothManager needs to be Clone for app.manage()
+#[derive(Clone)]
 pub struct BluetoothManager<R: Runtime> {
-  // zbus::Connection is Clone (it's an Arc wrapper internally)
   conn: Connection,
   app: AppHandle<R>,
 }
 
-// Removed clone_for_tauri_manage as derive(Clone) should suffice.
 
-// desktop::init ahora es async
 pub async fn init<R: Runtime + Clone>(app: AppHandle<R>, _api: PluginApi<R, Config>) -> CrateResult<BluetoothManager<R>> { // Removed lifetime from PluginApi
   let conn = Connection::system().await?;
   
@@ -32,7 +29,6 @@ pub async fn init<R: Runtime + Clone>(app: AppHandle<R>, _api: PluginApi<R, Conf
   Ok(manager)
 }
 
-// ... (helper_adapter_info_from_props y helper_device_info_from_props sin cambios, pero usando .clone().try_into())
 fn helper_adapter_info_from_props(
     path: String,
     props: &HashMap<String, OwnedValue>,
@@ -95,26 +91,21 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                 Ok(h) => h,
                 Err(e) => {
                     eprintln!("[bluetooth-plugin] Failed to get message header: {:?}", e);
-                    // Decide if to continue or break. For now, continue to next message.
                     continue;
                 }
             };
 
-            // header.sender() returns Result<Option<UniqueNameRef<'_>>, zbus::Error>
-            // We want Option<&str> for comparison
-            let sender_res_opt_ref = header.sender(); // Result<Option<UniqueNameRef<'_>>, Error>
+            let sender_res_opt_ref = header.sender();
             let sender_opt_str = match sender_res_opt_ref {
                 Ok(Some(unique_name_ref)) => Some(unique_name_ref.as_str()),
                 Ok(None) => None,
                 Err(e) => {
                     eprintln!("[bluetooth-plugin] Error getting sender from header: {:?}", e);
-                    None // Or handle error more explicitly
+                    None
                 }
             };
             
             if msg.message_type() == MessageType::Signal && sender_opt_str == Some("org.bluez") {
-              // path(), interface(), member() also return Result<Option<TypeRef>, Error>
-              // We want Option<String>
               let path_opt_string = match header.path() {
                 Ok(Some(p_ref)) => Some(p_ref.as_str().to_string()),
                 Ok(None) => None,
@@ -140,7 +131,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                 }
               };
 
-              // Now match on Option<&str> by using .as_deref() on Option<String>
               match (interface_opt_string.as_deref(), member_opt_string.as_deref()) {
             (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesAdded")) => {
               match msg.body::<(ObjectPath<'_>, HashMap<String, HashMap<String, OwnedValue>>)>() {
@@ -179,7 +169,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
               }
             }
             (Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")) => {
-              // path_opt_string is Option<String>
               if let Some(p_str) = path_opt_string { // p_str is String
                 match msg.body::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>() {
                   Ok((changed_interface_name, _changed_properties, _invalidated_properties)) => {

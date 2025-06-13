@@ -1,11 +1,10 @@
 use tauri::{
   AppHandle,
   Runtime,
-  plugin::{Builder, TauriPlugin, PluginApi}, // Removed Setup, PluginApi should be sufficient
+  plugin::{Builder, TauriPlugin, PluginApi},
   Manager,
 };
 
-// Define a placeholder Config struct. Replace with your actual config if needed.
 #[derive(Default, serde::Deserialize, Clone)]
 pub struct Config {}
 
@@ -22,7 +21,6 @@ pub use error::{Error, Result};
 #[cfg(desktop)]
 use desktop::BluetoothManager;
 
-/// Extensions to [`tauri::App`], [`tauri::AppHandle`] and [`tauri::Window`] to access the bluetooth-manager APIs.
 pub trait BluetoothManagerExt<R: Runtime> {
   fn bluetooth_manager(&self) -> &BluetoothManager<R>;
 }
@@ -36,7 +34,7 @@ impl<R: Runtime, T: Manager<R>> crate::BluetoothManagerExt<R> for T {
 /// Initializes the plugin.
 pub fn init<R: Runtime + Clone>(
     app: AppHandle<R>,
-    api: PluginApi<R, Config>, // desktop::init will now take PluginApi
+    api: PluginApi<R, Config>,
 ) -> crate::Result<BluetoothManager<R>> {
     #[cfg(desktop)]
     let bluetooth_manager = tauri::async_runtime::block_on(desktop::init(app.clone(), api))?;
@@ -59,11 +57,10 @@ pub fn init_plugin<R: Runtime + Clone>(_app: AppHandle<R>) -> TauriPlugin<R, Con
             commands::list_paired_devices,
             commands::connect_device,
             commands::disconnect_device,
-            commands::get_device_info
-            // ping is a method on BluetoothManager, not a global command here
+            commands::get_device_info,
         ])
         .setup(|app_handle, api| {
-            init(app_handle.clone(), api)?; // Pass PluginApi directly
+            init(app_handle.clone(), api)?;
             Ok(())
         })
         .build()
