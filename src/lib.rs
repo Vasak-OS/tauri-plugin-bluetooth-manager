@@ -1,52 +1,33 @@
 use tauri::{
-  AppHandle,
-  Runtime,
-  plugin::{Builder, TauriPlugin, PluginApi},
-  Manager,
+    async_runtime,
+    plugin::{Builder, TauriPlugin},
+    Manager, Runtime,
 };
-
-#[derive(Default, serde::Deserialize, Clone)]
-pub struct Config {}
 
 pub use models::*;
 
-#[cfg(desktop)]
-mod desktop;
 mod commands;
+mod desktop;
 mod error;
 mod models;
 
 pub use error::{Error, Result};
 
-#[cfg(desktop)]
 use desktop::BluetoothManager;
 
 pub trait BluetoothManagerExt<R: Runtime> {
-  fn bluetooth_manager(&self) -> &BluetoothManager<R>;
+    fn bluetooth_manager(&self) -> &BluetoothManager;
 }
 
-impl<R: Runtime, T: Manager<R>> crate::BluetoothManagerExt<R> for T {
-  fn bluetooth_manager(&self) -> &BluetoothManager<R> {
-    self.state::<BluetoothManager<R>>().inner()
-  }
+impl<R: Runtime, T: Manager<R>> BluetoothManagerExt<R> for T {
+    fn bluetooth_manager(&self) -> &BluetoothManager {
+        self.state::<BluetoothManager>().inner()
+    }
 }
 
 /// Initializes the plugin.
-pub fn init<R: Runtime + Clone>(
-    app: AppHandle<R>,
-    api: PluginApi<R, Config>,
-) -> crate::Result<BluetoothManager<R>> {
-    #[cfg(desktop)]
-    let bluetooth_manager = tauri::async_runtime::block_on(desktop::init(app.clone(), api))?;
-
-    app.manage(bluetooth_manager.clone());
-
-    Ok(bluetooth_manager)
-}
-
-// Tauri plugin builder
-pub fn init_plugin<R: Runtime + Clone>(_app: AppHandle<R>) -> TauriPlugin<R, Config> { // Added R: Clone
-    Builder::<R, Config>::new("bluetooth-manager")
+pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    Builder::<R>::new("bluetooth-manager")
         .invoke_handler(tauri::generate_handler![
             commands::list_adapters,
             commands::set_adapter_powered,
@@ -60,8 +41,9 @@ pub fn init_plugin<R: Runtime + Clone>(_app: AppHandle<R>) -> TauriPlugin<R, Con
             commands::get_device_info,
         ])
         .setup(|app_handle, api| {
-            init(app_handle.clone(), api)?;
+            async_runtime::block_on(desktop::init(app_handle.clone(), api))?;
             Ok(())
         })
         .build()
 }
+

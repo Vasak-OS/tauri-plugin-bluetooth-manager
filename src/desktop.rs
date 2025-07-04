@@ -1,32 +1,33 @@
 use futures::StreamExt;
-use tauri::{AppHandle, Manager, Runtime, plugin::PluginApi, Emitter};
-use zbus::{Connection, MessageStream, MessageType, zvariant::{ObjectPath, OwnedValue, Value as ZbusValue}};
+use tauri::{plugin::PluginApi, AppHandle, Emitter, Manager, Runtime};
+use zbus::{
+    zvariant::{ObjectPath, OwnedValue, Value as ZbusValue},
+    Connection, MessageStream, MessageType,
+};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
+use crate::commands::{get_adapter_state, get_device_info};
 use crate::models::*;
 use crate::Result as CrateResult;
-use crate::commands::{get_adapter_state, get_device_info};
-use crate::Config;
 
 #[derive(Clone)]
-pub struct BluetoothManager<R: Runtime> {
-  conn: Connection,
-  app: AppHandle<R>,
+pub struct BluetoothManager {
+    conn: Connection,
 }
 
+pub async fn init<R: Runtime>(app: AppHandle<R>, _api: PluginApi<R, ()>) -> CrateResult<()> {
+    let conn = Connection::system().await?;
 
-pub async fn init<R: Runtime + Clone>(app: AppHandle<R>, _api: PluginApi<R, Config>) -> CrateResult<BluetoothManager<R>> { // Removed lifetime from PluginApi
-  let conn = Connection::system().await?;
-  
-  let manager = BluetoothManager {
-    conn: conn.clone(), 
-    app: app.clone(),
-  };
+    let manager = BluetoothManager {
+        conn: conn.clone(),
+    };
 
-  tauri::async_runtime::spawn(run_signal_listener(conn, app.clone()));
+    app.manage(manager);
 
-  Ok(manager)
+    tauri::async_runtime::spawn(run_signal_listener(conn, app));
+
+    Ok(())
 }
 
 fn helper_adapter_info_from_props(
@@ -230,10 +231,13 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
     println!("[bluetooth-plugin] D-Bus signal listener terminated.");
 }
 
-impl<R: Runtime> BluetoothManager<R> {
-  pub fn ping(&self, payload: crate::models::PingRequest) -> CrateResult<crate::models::PingResponse> {
-    Ok(crate::models::PingResponse {
-      value: payload.value,
-    })
-  }
+impl BluetoothManager {
+    pub fn ping(
+        &self,
+        payload: crate::models::PingRequest,
+    ) -> CrateResult<crate::models::PingResponse> {
+        Ok(crate::models::PingResponse {
+            value: payload.value,
+        })
+    }
 }
