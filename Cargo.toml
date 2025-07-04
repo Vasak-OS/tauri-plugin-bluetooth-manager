@@ -9,7 +9,7 @@ exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
 links = "tauri-plugin-bluetooth-manager"
 
 [dependencies]
-tauri = { version = "2.5.0" }
+tauri = { version = "2.5" }
 zbus = "3"
 zbus_macros = "3"
 serde = { version = "1.0", features = ["derive"] }
@@ -18,4 +18,4 @@ futures = "0.3"
 byteorder = "1.4"
 
 [build-dependencies]
-tauri-plugin = { version = "2.2.0", features = ["build"] }
+tauri-plugin = { version = "2.3", features = ["build"] }

@@ -295,6 +295,90 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the connect_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-device",
+          "markdownDescription": "Enables the connect_device command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-device",
+          "markdownDescription": "Denies the connect_device command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the disconnect_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-disconnect-device",
+          "markdownDescription": "Enables the disconnect_device command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the disconnect_device command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-disconnect-device",
+          "markdownDescription": "Denies the disconnect_device command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_adapter_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-adapter-state",
+          "markdownDescription": "Enables the get_adapter_state command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_adapter_state command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-adapter-state",
+          "markdownDescription": "Denies the get_adapter_state command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the get_device_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-get-device-info",
+          "markdownDescription": "Enables the get_device_info command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the get_device_info command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-get-device-info",
+          "markdownDescription": "Denies the get_device_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_adapters command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-adapters",
+          "markdownDescription": "Enables the list_adapters command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_adapters command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-adapters",
+          "markdownDescription": "Denies the list_adapters command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-devices",
+          "markdownDescription": "Enables the list_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-devices",
+          "markdownDescription": "Denies the list_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_paired_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-paired-devices",
+          "markdownDescription": "Enables the list_paired_devices command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_paired_devices command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-paired-devices",
+          "markdownDescription": "Denies the list_paired_devices command without any pre-configured scope."
+        },
+        {
           "description": "Enables the ping command without any pre-configured scope.",
           "type": "string",
           "const": "allow-ping",
@@ -305,6 +389,42 @@
           "type": "string",
           "const": "deny-ping",
           "markdownDescription": "Denies the ping command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_adapter_powered command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-adapter-powered",
+          "markdownDescription": "Enables the set_adapter_powered command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_adapter_powered command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-adapter-powered",
+          "markdownDescription": "Denies the set_adapter_powered command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the start_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-start-scan",
+          "markdownDescription": "Enables the start_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the start_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-start-scan",
+          "markdownDescription": "Denies the start_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the stop_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-scan",
+          "markdownDescription": "Enables the stop_scan command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_scan command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-scan",
+          "markdownDescription": "Denies the stop_scan command without any pre-configured scope."
         },
         {
           "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-ping`",

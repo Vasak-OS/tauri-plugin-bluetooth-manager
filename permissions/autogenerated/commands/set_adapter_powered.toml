@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-adapter-powered"
+description = "Enables the set_adapter_powered command without any pre-configured scope."
+commands.allow = ["set_adapter_powered"]
+
+[[permission]]
+identifier = "deny-set-adapter-powered"
+description = "Denies the set_adapter_powered command without any pre-configured scope."
+commands.deny = ["set_adapter_powered"]

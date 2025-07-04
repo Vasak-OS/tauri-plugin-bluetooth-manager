@@ -1,9 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export async function ping(value: string): Promise<string | null> {
-  return await invoke<{value?: string}>('plugin:bluetooth-manager|ping', {
-    payload: {
-      value,
-    },
-  }).then((r) => (r.value ? r.value : null));
+export async function listAdapters() {
+  return await invoke<{adapters: string[]}>('plugin:bluetooth-manager|list_adapters', {
+    payload: {},
+  }).then((r) => r.adapters);
 }
