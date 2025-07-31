@@ -51,3 +51,9 @@ pub struct DeviceInfo {
     // Podríamos añadir `manufacturer_data: Option<HashMap<u16, Vec<u8>>>`
     // y `service_data: Option<HashMap<String, Vec<u8>>>` si es necesario.
 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BluetoothChange {
+    pub change_type: String,
+    pub data: serde_json::Value,
+}
