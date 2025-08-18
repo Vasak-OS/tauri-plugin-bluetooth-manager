@@ -239,19 +239,91 @@ pub async fn get_device_info(device_path: String) -> Result<DeviceInfo> {
 }
 
 #[tauri::command]
-pub async fn list_paired_devices(_adapter_path: String) -> Result<Vec<DeviceInfo>> {
-    // TODO: Implement
-    Ok(vec![])
+pub async fn list_paired_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
+    let conn = Connection::system().await?;
+    let object_manager_proxy = Proxy::new(
+        &conn,
+        "org.bluez",
+        "/",
+        "org.freedesktop.DBus.ObjectManager",
+    )
+    .await?;
+
+    let reply_message = object_manager_proxy.call_method("GetManagedObjects", &()).await?;
+    let raw_managed_objects: Vec<(OwnedObjectPath, OwnedValue)> = reply_message.body()?;
+
+    let mut managed_objects: HashMap<ObjectPath<'static>, HashMap<String, HashMap<String, OwnedValue>>> = HashMap::new();
+
+    for (owned_path, interfaces_value) in raw_managed_objects {
+        let interfaces_map: HashMap<String, HashMap<String, OwnedValue>> =
+            interfaces_value.try_into()?;
+        managed_objects.insert(owned_path.into(), interfaces_map);
+    }
+
+    let mut paired_devices = Vec::new();
+
+    for (object_path, interfaces) in managed_objects {
+        if object_path.as_str().starts_with(&adapter_path) {
+            if let Some(props) = interfaces.get("org.bluez.Device1") {
+                let paired = props.get("Paired").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false);
+                if paired {
+                    paired_devices.push(DeviceInfo {
+                        path: object_path.to_string(),
+                        address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
+                        name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()),
+                        alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()),
+                        class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()),
+                        appearance: props.get("Appearance").and_then(|v| u16::try_from(v.clone()).ok()),
+                        icon: props.get("Icon").and_then(|v| String::try_from(v.clone()).ok()),
+                        paired,
+                        trusted: props.get("Trusted").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                        blocked: props.get("Blocked").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                        legacy_pairing: props.get("LegacyPairing").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                        rssi: props.get("RSSI").and_then(|v| i16::try_from(v.clone()).ok()),
+                        tx_power: props.get("TxPower").and_then(|v| i16::try_from(v.clone()).ok()),
+                        connected: props.get("Connected").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                        uuids: props.get("UUIDs")
+                            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
+                            .unwrap_or_default(),
+                        adapter: props.get("Adapter")
+                            .and_then(|v| ObjectPath::try_from(v.clone()).ok())
+                            .map(|p: ObjectPath| p.to_string())
+                            .unwrap_or_default(),
+                        services_resolved: props.get("ServicesResolved").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+                    });
+                }
+            }
+        }
+    }
+    Ok(paired_devices)
 }
 
 #[tauri::command]
-pub async fn connect_device(_device_path: String) -> Result<()> {
-    // TODO: Implement
+pub async fn connect_device(device_path: String) -> Result<()> {
+    let conn = Connection::system().await?;
+    let proxy = Proxy::new(
+        &conn,
+        "org.bluez",
+        device_path.as_str(),
+        "org.bluez.Device1",
+    )
+    .await?;
+
+    proxy.call_method("Connect", &()).await?;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn disconnect_device(_device_path: String) -> Result<()> {
-    // TODO: Implement
+pub async fn disconnect_device(device_path: String) -> Result<()> {
+    let conn = Connection::system().await?;
+    let proxy = Proxy::new(
+        &conn,
+        "org.bluez",
+        device_path.as_str(),
+        "org.bluez.Device1",
+    )
+    .await?;
+
+    proxy.call_method("Disconnect", &()).await?;
     Ok(())
 }
