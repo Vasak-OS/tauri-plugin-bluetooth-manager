@@ -151,7 +151,7 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
             }
             Some(proxy)
         }
-        Err(e) => {
+        Err(_e) => {
             None
         }
     };
@@ -162,7 +162,7 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
             if msg.message_type() == MessageType::Signal {
                 let header = match msg.header() {
                     Ok(h) => h,
-                    Err(e) => {
+                    Err(_e) => {
                         continue;
                     }
                 };
