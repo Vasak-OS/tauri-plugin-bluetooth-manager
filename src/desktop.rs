@@ -11,9 +11,8 @@ use crate::commands::{get_adapter_state, get_device_info};
 use crate::models::*;
 use crate::Result as CrateResult;
 
-#[derive(Clone)]
 pub struct BluetoothManager {
-    conn: Connection,
+    pub conn: Connection,
 }
 
 pub async fn init<R: Runtime>(app: AppHandle<R>, _api: PluginApi<R, ()>) -> CrateResult<()> {
