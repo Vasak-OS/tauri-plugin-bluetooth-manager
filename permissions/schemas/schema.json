@@ -427,10 +427,10 @@
           "markdownDescription": "Denies the stop_scan command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-ping`",
+          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-list_adapters`\n- `allow-list_devices`\n- `allow-list_paired_devices`\n- `allow-set_adapter_powered`\n- `allow-start_scan`\n- `allow-stop_scan`\n- `allow-connect_device`\n- `allow-disconnect_device`\n- `allow-get_device_info`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-ping`"
+          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-list_adapters`\n- `allow-list_devices`\n- `allow-list_paired_devices`\n- `allow-set_adapter_powered`\n- `allow-start_scan`\n- `allow-stop_scan`\n- `allow-connect_device`\n- `allow-disconnect_device`\n- `allow-get_device_info`"
         }
       ]
     }
