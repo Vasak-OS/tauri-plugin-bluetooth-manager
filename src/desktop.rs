@@ -34,7 +34,6 @@ pub async fn init<R: Runtime>(app: AppHandle<R>, _api: PluginApi<R, ()>) -> Crat
 }
 
 async fn setup_dbus_subscriptions(conn: &Connection) -> CrateResult<()> {
-    println!("[bluetooth-plugin] Setting up D-Bus subscriptions...");
     
     // Suscribirse a las señales del ObjectManager de BlueZ
     let proxy = Proxy::new(
@@ -44,7 +43,6 @@ async fn setup_dbus_subscriptions(conn: &Connection) -> CrateResult<()> {
         "org.freedesktop.DBus.ObjectManager",
     ).await?;
 
-    // Intentar llamar a GetManagedObjects para verificar la conectividad
     match proxy.call_method("GetManagedObjects", &()).await {
         Ok(_) => println!("[bluetooth-plugin] Successfully connected to BlueZ ObjectManager"),
         Err(e) => {
@@ -76,7 +74,6 @@ async fn setup_dbus_subscriptions(conn: &Connection) -> CrateResult<()> {
         }
     }
 
-    println!("[bluetooth-plugin] D-Bus subscriptions setup complete");
     Ok(())
 }
 
@@ -155,7 +152,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
             Some(proxy)
         }
         Err(e) => {
-            eprintln!("[bluetooth-plugin] Failed to create D-Bus proxy: {:?}", e);
             None
         }
     };
@@ -167,7 +163,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                 let header = match msg.header() {
                     Ok(h) => h,
                     Err(e) => {
-                        eprintln!("[bluetooth-plugin] Failed to get message header: {:?}", e);
                         continue;
                     }
                 };
@@ -248,21 +243,17 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                               }
                         }
                         (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesRemoved")) => {
-                            println!("[bluetooth-plugin] Processing InterfacesRemoved signal");
                             match msg.body::<(ObjectPath<'_>, Vec<String>)>() {
                                 Ok((object_path, interfaces_removed)) => {
                                   let path_string = object_path.to_string();
                                   
-                                  // Detectar remoción de adaptadores
                                   if interfaces_removed.contains(&"org.bluez.Adapter1".to_string()) {
-                                    println!("[bluetooth-plugin] Adapter removed: {}", path_string);
                                     app.emit("bluetooth-change", BluetoothChange {
                                         change_type: "adapter-removed".to_string(),
                                         data: serde_json::json!({ "path": path_string.clone() }),
                                     }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit adapter-removed: {}", e));
                                   }
                                   
-                                  // Detectar remoción de dispositivos
                                   if interfaces_removed.contains(&"org.bluez.Device1".to_string()) {
                                     
                                     app.emit("bluetooth-change", BluetoothChange {
@@ -285,12 +276,9 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                             if let Some(p_str) = path_opt_string {
                                 match msg.body::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>() {
                                     Ok((changed_interface_name, _changed_properties, _invalidated_properties)) => {
-                                        println!("[bluetooth-plugin] PropertiesChanged for interface: {} on path: {}", changed_interface_name, p_str);
-                                        
                                         if changed_interface_name == "org.bluez.Adapter1" {
                                             match get_adapter_state(p_str.clone()).await {
                                                 Ok(adapter_info) => {
-                                                    println!("[bluetooth-plugin] Adapter property changed: {}", p_str);
                                                     app.emit("bluetooth-change", BluetoothChange {
                                                         change_type: "adapter-property-changed".to_string(),
                                                         data: serde_json::to_value(adapter_info).unwrap_or_default(),
@@ -341,7 +329,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                             }
                         }
                         (Some("org.bluez.Device1"), Some("Disconnected")) => {
-                            println!("[bluetooth-plugin] Processing Device Disconnected signal");
                             if let Some(p_str) = path_opt_string {
                                 match get_device_info(p_str.clone()).await {
                                     Ok(device_info) => {
@@ -362,7 +349,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                             if let Some(p_str) = path_opt_string {
                                 match get_device_info(p_str.clone()).await {
                                     Ok(device_info) => {
-                                        println!("[bluetooth-plugin] Device connected: {}", p_str);
                                         app.emit("bluetooth-change", BluetoothChange {
                                             change_type: "device-connected".to_string(),
                                             data: serde_json::to_value(device_info).unwrap_or_default(),
