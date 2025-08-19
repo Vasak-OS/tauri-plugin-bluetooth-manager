@@ -4,7 +4,15 @@ Default permissions for the plugin
 
 #### This default permission set includes the following:
 
-- `allow-ping`
+- `allow-list_adapters`
+- `allow-list_devices`
+- `allow-list_paired_devices`
+- `allow-set_adapter_powered`
+- `allow-start_scan`
+- `allow-stop_scan`
+- `allow-connect_device`
+- `allow-disconnect_device`
+- `allow-get_device_info`
 
 ## Permission Table
 
