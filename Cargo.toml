@@ -1,8 +1,8 @@
 [package]
 name = "tauri-plugin-bluetooth-manager"
 version = "0.1.0"
-authors = [ "You" ]
-description = ""
+authors = [ "Joaquin (Pato) Decima <jdecima@vasak.net.ar>", "Vasak Group" ]
+description = "A Tauri plugin to manage Bluetooth adapters and devices in Linux."
 edition = "2021"
 rust-version = "1.77.2"
 exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]
