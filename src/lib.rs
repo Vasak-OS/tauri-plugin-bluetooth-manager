@@ -39,9 +39,18 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::connect_device,
             commands::disconnect_device,
             commands::get_device_info,
+            commands::bluetooth_plugin_status,
         ])
         .setup(|app_handle, api| {
-            async_runtime::block_on(desktop::init(app_handle.clone(), api))?;
+            let result = async_runtime::block_on(desktop::init(app_handle.clone(), api));
+            let initialized = result.is_ok();
+            if let Some(manager) = app_handle.try_state::<desktop::BluetoothManager>() {
+                let mut guard = manager.inner().initialized.lock().unwrap();
+                *guard = initialized;
+            }
+            if let Err(e) = result {
+                eprintln!("Bluetooth service not available: {e}");
+            }
             Ok(())
         })
         .build()

@@ -1,4 +1,5 @@
 use futures::StreamExt;
+use std::sync::Mutex;
 use tauri::{plugin::PluginApi, AppHandle, Emitter, Manager, Runtime};
 use zbus::{
     zvariant::{ObjectPath, OwnedValue, Value as ZbusValue},
@@ -13,6 +14,7 @@ use crate::Result as CrateResult;
 
 pub struct BluetoothManager {
     pub conn: Connection,
+    pub initialized: Mutex<bool>,
 }
 
 pub async fn init<R: Runtime>(app: AppHandle<R>, _api: PluginApi<R, ()>) -> CrateResult<()> {
@@ -20,6 +22,7 @@ pub async fn init<R: Runtime>(app: AppHandle<R>, _api: PluginApi<R, ()>) -> Crat
 
     let manager = BluetoothManager {
         conn: conn.clone(),
+        initialized: Mutex::new(false),
     };
 
     app.manage(manager);

@@ -2,12 +2,14 @@ use crate::models::{AdapterInfo, DeviceInfo};
 use crate::Result;
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use tauri::{State};
 use zbus::{
     zvariant::{
         from_slice, EncodingContext, ObjectPath, OwnedObjectPath, OwnedValue, Value as ZbusValue,
     },
     Connection, Proxy,
 };
+use crate::desktop::BluetoothManager;
 
 #[tauri::command]
 pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
@@ -497,4 +499,11 @@ pub async fn disconnect_device(device_path: String) -> Result<()> {
 
     proxy.call_method("Disconnect", &()).await?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn bluetooth_plugin_status(
+    state: State<'_, BluetoothManager>
+) -> Result<bool> {
+    Ok(*state.initialized.lock().unwrap())
 }
