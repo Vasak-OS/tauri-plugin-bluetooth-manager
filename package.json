@@ -1,6 +1,6 @@
 {
   "name": "@vasakgroup/plugin-bluetooth-manager",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "author": "Joaquin (Pato) Decima <jdecima@vasak.net.ar>",
   "description": "A Tauri plugin to manage Bluetooth adapters and devices in Linux.",
   "type": "module",
