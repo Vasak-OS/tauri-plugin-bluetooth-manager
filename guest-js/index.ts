@@ -146,6 +146,13 @@ export async function disconnectDevice(devicePath: string): Promise<void> {
   });
 }
 
+/**
+ * Check if the bluetooth plugin was initialized correctly
+ */
+export async function isBluetoothPluginInitialized(): Promise<boolean> {
+  return await invoke<boolean>('plugin:bluetooth-manager|bluetooth_plugin_status');
+}
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
