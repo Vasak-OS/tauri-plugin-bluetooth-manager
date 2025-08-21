@@ -13,6 +13,7 @@ Default permissions for the plugin
 - `allow-connect_device`
 - `allow-disconnect_device`
 - `allow-get_device_info`
+- `allow-bluetooth_plugin_status`
 
 ## Permission Table
 
