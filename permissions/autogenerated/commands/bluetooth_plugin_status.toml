@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-bluetooth-plugin-status"
+description = "Enables the bluetooth_plugin_status command without any pre-configured scope."
+commands.allow = ["bluetooth_plugin_status"]
+
+[[permission]]
+identifier = "deny-bluetooth-plugin-status"
+description = "Denies the bluetooth_plugin_status command without any pre-configured scope."
+commands.deny = ["bluetooth_plugin_status"]

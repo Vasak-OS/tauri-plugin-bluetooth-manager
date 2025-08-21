@@ -9,5 +9,6 @@ permissions = [
   "allow-stop_scan",
   "allow-connect_device",
   "allow-disconnect_device",
-  "allow-get_device_info"
+  "allow-get_device_info",
+  "allow-bluetooth_plugin_status"
 ]

@@ -26,6 +26,32 @@ Default permissions for the plugin
 <tr>
 <td>
 
+`bluetooth-manager:allow-bluetooth-plugin-status`
+
+</td>
+<td>
+
+Enables the bluetooth_plugin_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`bluetooth-manager:deny-bluetooth-plugin-status`
+
+</td>
+<td>
+
+Denies the bluetooth_plugin_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `bluetooth-manager:allow-connect-device`
 
 </td>

@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the bluetooth_plugin_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-bluetooth-plugin-status",
+          "markdownDescription": "Enables the bluetooth_plugin_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the bluetooth_plugin_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-bluetooth-plugin-status",
+          "markdownDescription": "Denies the bluetooth_plugin_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the connect_device command without any pre-configured scope.",
           "type": "string",
           "const": "allow-connect-device",

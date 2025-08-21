@@ -9,6 +9,7 @@ const COMMANDS: &[&str] = &[
     "connect_device",
     "disconnect_device",
     "get_device_info",
+    "bluetooth_plugin_status",
 ];
 
 fn main() {
