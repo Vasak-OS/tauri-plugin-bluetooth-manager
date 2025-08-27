@@ -188,8 +188,18 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
         "org.bluez.Adapter1",
     )
     .await?;
-    proxy.call_method("StartDiscovery", &()).await?;
-    Ok(())
+    match proxy.call_method("StartDiscovery", &()).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Ignora el error si ya está en progreso
+            let msg = e.to_string();
+            if msg.contains("org.bluez.Error.InProgress") {
+                Ok(())
+            } else {
+                Err(e.into())
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -202,8 +212,18 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
         "org.bluez.Adapter1",
     )
     .await?;
-    proxy.call_method("StopDiscovery", &()).await?;
-    Ok(())
+    match proxy.call_method("StopDiscovery", &()).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            // Ignora el error si no hay discovery iniciado
+            let msg = e.to_string();
+            if msg.contains("No discovery started") || msg.contains("org.bluez.Error.Failed") {
+                Ok(())
+            } else {
+                Err(e.into())
+            }
+        }
+    }
 }
 
 #[tauri::command]
