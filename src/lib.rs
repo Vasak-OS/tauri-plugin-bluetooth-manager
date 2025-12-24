@@ -10,6 +10,7 @@ mod commands;
 mod desktop;
 mod error;
 mod models;
+mod logging;
 
 pub use error::{Error, Result};
 
@@ -27,6 +28,8 @@ impl<R: Runtime, T: Manager<R>> BluetoothManagerExt<R> for T {
 
 /// Initializes the plugin.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    logging::init_logging();
+
     Builder::<R>::new("bluetooth-manager")
         .invoke_handler(tauri::generate_handler![
             commands::list_adapters,

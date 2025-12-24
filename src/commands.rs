@@ -10,6 +10,7 @@ use zbus::{
     Connection, Proxy,
 };
 use crate::desktop::BluetoothManager;
+use tracing::{info, error};
 
 #[tauri::command]
 pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
@@ -180,6 +181,8 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
 
 #[tauri::command]
 pub async fn start_scan(adapter_path: String) -> Result<()> {
+    info!("Starting scan on adapter: {}", adapter_path);
+    
     let conn = Connection::system().await?;
     let proxy = Proxy::new(
         &conn,
@@ -188,14 +191,20 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
         "org.bluez.Adapter1",
     )
     .await?;
+    
     match proxy.call_method("StartDiscovery", &()).await {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            info!("Scan started successfully");
+            Ok(())
+        }
         Err(e) => {
-            // Ignora el error si ya está en progreso
             let msg = e.to_string();
-            if msg.contains("org.bluez.Error.InProgress") {
+            error!("StartDiscovery error: {}", msg);
+            if msg.contains("org.bluez.Error.InProgress") || msg.contains("InProgress") {
+                info!("Scan already in progress, continuing...");
                 Ok(())
             } else {
+                error!("Error starting scan: {}", msg);
                 Err(e.into())
             }
         }
@@ -204,6 +213,8 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
 
 #[tauri::command]
 pub async fn stop_scan(adapter_path: String) -> Result<()> {
+    info!("Stopping scan on adapter: {}", adapter_path);
+    
     let conn = Connection::system().await?;
     let proxy = Proxy::new(
         &conn,
@@ -212,14 +223,22 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
         "org.bluez.Adapter1",
     )
     .await?;
+    
     match proxy.call_method("StopDiscovery", &()).await {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            info!("Scan stopped successfully");
+            Ok(())
+        }
         Err(e) => {
-            // Ignora el error si no hay discovery iniciado
             let msg = e.to_string();
-            if msg.contains("No discovery started") || msg.contains("org.bluez.Error.Failed") {
+            error!("StopDiscovery error: {}", msg);
+            if msg.contains("No discovery started") 
+                || msg.contains("org.bluez.Error.Failed")
+                || msg.contains("org.bluez.Error.NotReady") {
+                info!("No active scan to stop, continuing...");
                 Ok(())
             } else {
+                error!("Error stopping scan: {}", msg);
                 Err(e.into())
             }
         }
@@ -228,6 +247,8 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
 
 #[tauri::command]
 pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
+    info!("Listing devices for adapter: {}", adapter_path);
+    
     let conn = Connection::system().await?;
     let object_manager_proxy = Proxy::new(
         &conn,
@@ -241,21 +262,32 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
         .call_method("GetManagedObjects", &())
         .await?;
 
-    // Decodificar correctamente como HashMap
     let managed_objects: HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>> =
         reply_message.body()?;
+
+    info!("Total managed objects: {}", managed_objects.len());
 
     let mut devices = Vec::new();
 
     for (object_path, interfaces) in managed_objects {
-        if object_path.as_str().starts_with(&adapter_path) {
+        let path_str = object_path.as_str();
+        
+        if path_str.starts_with(&adapter_path) {
             if let Some(props) = interfaces.get("org.bluez.Device1") {
+                let device_name = props
+                    .get("Name")
+                    .and_then(|v| String::try_from(v.clone()).ok())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let device_address = props
+                    .get("Address")
+                    .and_then(|v| String::try_from(v.clone()).ok())
+                    .unwrap_or_else(|| "Unknown".to_string());
+                
+                info!("Found device: {} ({})", device_name, device_address);
+                
                 devices.push(DeviceInfo {
                     path: object_path.to_string(),
-                    address: props
-                        .get("Address")
-                        .and_then(|v| String::try_from(v.clone()).ok())
-                        .unwrap_or_default(),
+                    address: device_address,
                     name: props
                         .get("Name")
                         .and_then(|v| String::try_from(v.clone()).ok()),
@@ -314,6 +346,8 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
             }
         }
     }
+    
+    info!("Total devices found: {}", devices.len());
     Ok(devices)
 }
 

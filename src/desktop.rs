@@ -130,7 +130,12 @@ fn helper_device_info_from_props(path: String, props: &HashMap<String, OwnedValu
 }
 
 async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
+    use std::time::{Duration, Instant};
     let mut stream = MessageStream::from(conn.clone());
+
+    // Throttling state
+    let mut device_last_update: HashMap<String, Instant> = HashMap::new();
+    const UPDATE_THROTTLE: Duration = Duration::from_millis(500);
 
     // Obtener el nombre único de org.bluez para comparación
     let mut bluez_unique_name: Option<String> = None;
@@ -277,7 +282,7 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                             
                             if let Some(p_str) = path_opt_string {
                                 match msg.body::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>() {
-                                    Ok((changed_interface_name, _changed_properties, _invalidated_properties)) => {
+                                    Ok((changed_interface_name, changed_properties, _invalidated_properties)) => {
                                         if changed_interface_name == "org.bluez.Adapter1" {
                                             match get_adapter_state(p_str.clone()).await {
                                                 Ok(adapter_info) => {
@@ -296,9 +301,23 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                                             }
                                         } 
                                         else if changed_interface_name == "org.bluez.Device1" {
+                                            // Throttling logic for device properties
+                                            let critical_keys = ["Connected", "Paired", "Trusted", "Blocked", "Name", "Alias"];
+                                            let is_critical = changed_properties.keys().any(|k| critical_keys.contains(&k.as_str()));
+
+                                            if !is_critical {
+                                                if let Some(last) = device_last_update.get(&p_str) {
+                                                    if last.elapsed() < UPDATE_THROTTLE {
+                                                        // Skip this update
+                                                        continue;
+                                                    }
+                                                }
+                                                device_last_update.insert(p_str.clone(), Instant::now());
+                                            }
+
                                             match get_device_info(p_str.clone()).await {
                                                 Ok(device_info) => {
-                                                    println!("[bluetooth-plugin] Device property changed: {}", p_str);
+                                                    // println!("[bluetooth-plugin] Device property changed: {}", p_str);
                                                     app.emit("bluetooth-change", BluetoothChange {
                                                         change_type: "device-property-changed".to_string(),
                                                         data: serde_json::to_value(device_info).unwrap_or_default(),
