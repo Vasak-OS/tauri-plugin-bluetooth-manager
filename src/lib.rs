@@ -52,7 +52,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 *guard = initialized;
             }
             if let Err(e) = result {
-                eprintln!("Bluetooth service not available: {e}");
+                tracing::error!("Bluetooth service not available: {e}");
             }
             Ok(())
         })

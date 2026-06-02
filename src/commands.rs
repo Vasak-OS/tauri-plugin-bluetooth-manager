@@ -217,6 +217,14 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
 
     for (object_path, interfaces) in managed_objects {
         let path_str = object_path.as_str();
+        let has_device_interface = interfaces.contains_key("org.bluez.Device1");
+        
+        info!(
+            "Object path: {} | has Device1: {} | starts_with adapter: {}",
+            path_str,
+            has_device_interface,
+            path_str.starts_with(&adapter_path)
+        );
         
         if path_str.starts_with(&adapter_path) {
             if let Some(props) = interfaces.get("org.bluez.Device1") {
