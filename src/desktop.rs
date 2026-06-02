@@ -8,6 +8,26 @@ use zbus::{
 use std::collections::HashMap;
 use std::convert::TryFrom;
 
+fn get_prop_vec(props: &HashMap<String, OwnedValue>, key: &str) -> Vec<String> {
+    props.get(key).and_then(|v| {
+        match &**v {
+            ZbusValue::Array(arr) => arr.iter()
+                .map(|e| String::try_from(e).ok())
+                .collect::<Option<Vec<_>>>(),
+            _ => None,
+        }
+    }).unwrap_or_default()
+}
+
+macro_rules! get_prop {
+    ($props:expr, $key:expr, $ty:ty) => {
+        $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok())
+    };
+    ($props:expr, $key:expr, $ty:ty, $default:expr) => {
+        $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok()).unwrap_or($default)
+    };
+}
+
 use crate::commands::{get_adapter_state, get_device_info};
 use crate::models::*;
 use crate::Result as CrateResult;
@@ -85,47 +105,43 @@ fn helper_adapter_info_from_props(
 ) -> AdapterInfo {
     AdapterInfo {
         path,
-        address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-        name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-        alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-        class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
-        powered: props.get("Powered").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        discoverable: props.get("Discoverable").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        discoverable_timeout: props.get("DiscoverableTimeout").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
-        pairable: props.get("Pairable").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        pairable_timeout: props.get("PairableTimeout").and_then(|v| u32::try_from(v.clone()).ok()).unwrap_or_default(),
-        discovering: props.get("Discovering").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        uuids: props.get("UUIDs")
-            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        modalias: props.get("Modalias").and_then(|v| String::try_from(v.clone()).ok()),
+        address: get_prop!(props, "Address", String, String::new()),
+        name: get_prop!(props, "Name", String, String::new()),
+        alias: get_prop!(props, "Alias", String, String::new()),
+        class: get_prop!(props, "Class", u32, 0),
+        powered: get_prop!(props, "Powered", bool, false),
+        discoverable: get_prop!(props, "Discoverable", bool, false),
+        discoverable_timeout: get_prop!(props, "DiscoverableTimeout", u32, 0),
+        pairable: get_prop!(props, "Pairable", bool, false),
+        pairable_timeout: get_prop!(props, "PairableTimeout", u32, 0),
+        discovering: get_prop!(props, "Discovering", bool, false),
+        uuids: get_prop_vec(props, "UUIDs"),
+        modalias: get_prop!(props, "Modalias", String),
     }
 }
 
 fn helper_device_info_from_props(path: String, props: &HashMap<String, OwnedValue>) -> DeviceInfo {
     DeviceInfo {
         path,
-        address: props.get("Address").and_then(|v| String::try_from(v.clone()).ok()).unwrap_or_default(),
-        name: props.get("Name").and_then(|v| String::try_from(v.clone()).ok()),
-        alias: props.get("Alias").and_then(|v| String::try_from(v.clone()).ok()),
-        class: props.get("Class").and_then(|v| u32::try_from(v.clone()).ok()),
-        appearance: props.get("Appearance").and_then(|v| u16::try_from(v.clone()).ok()),
-        icon: props.get("Icon").and_then(|v| String::try_from(v.clone()).ok()),
-        paired: props.get("Paired").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        trusted: props.get("Trusted").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        blocked: props.get("Blocked").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        legacy_pairing: props.get("LegacyPairing").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        rssi: props.get("RSSI").and_then(|v| i16::try_from(v.clone()).ok()),
-        tx_power: props.get("TxPower").and_then(|v| i16::try_from(v.clone()).ok()),
-        connected: props.get("Connected").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
-        uuids: props.get("UUIDs")
-            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-            .unwrap_or_default(),
+        address: get_prop!(props, "Address", String, String::new()),
+        name: get_prop!(props, "Name", String),
+        alias: get_prop!(props, "Alias", String),
+        class: get_prop!(props, "Class", u32),
+        appearance: get_prop!(props, "Appearance", u16),
+        icon: get_prop!(props, "Icon", String),
+        paired: get_prop!(props, "Paired", bool, false),
+        trusted: get_prop!(props, "Trusted", bool, false),
+        blocked: get_prop!(props, "Blocked", bool, false),
+        legacy_pairing: get_prop!(props, "LegacyPairing", bool, false),
+        rssi: get_prop!(props, "RSSI", i16),
+        tx_power: get_prop!(props, "TxPower", i16),
+        connected: get_prop!(props, "Connected", bool, false),
+        uuids: get_prop_vec(props, "UUIDs"),
         adapter: props.get("Adapter")
-            .and_then(|v| ObjectPath::try_from(v.clone()).ok())
+            .and_then(|v| ObjectPath::try_from(&**v).ok())
             .map(|p: ObjectPath| p.to_string())
             .unwrap_or_default(),
-        services_resolved: props.get("ServicesResolved").and_then(|v| bool::try_from(v.clone()).ok()).unwrap_or(false),
+        services_resolved: get_prop!(props, "ServicesResolved", bool, false),
     }
 }
 
@@ -148,9 +164,9 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
         "org.freedesktop.DBus",
     ).await {
         Ok(proxy) => {
-            match proxy.call_method("GetNameOwner", &("org.bluez",)).await {
-                Ok(reply) => {
-                    if let Ok(unique_name) = reply.body::<String>() {
+                match proxy.call_method("GetNameOwner", &("org.bluez",)).await {
+                        Ok(reply) => {
+                            if let Ok(unique_name) = reply.body().deserialize::<String>() {
                         bluez_unique_name = Some(unique_name);
                     }
                 }
@@ -167,56 +183,26 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
         match msg_res {
           Ok(msg) => {
             if msg.message_type() == MessageType::Signal {
-                let header = match msg.header() {
-                    Ok(h) => h,
-                    Err(_e) => {
-                        continue;
-                    }
-                };
+                let header = msg.header();
 
-                let sender_opt_str = match header.sender() {
-                    Ok(Some(unique_name_ref)) => Some(unique_name_ref.as_str()),
-                    Ok(None) => None,
-                    Err(e) => {
-                        eprintln!("[bluetooth-plugin] Error getting sender from header: {:?}", e);
-                        None
-                    }
-                };
+                let sender_opt_str = header.sender().map(|s| s.to_string());
 
-                let is_bluez_signal = sender_opt_str == Some("org.bluez") || 
-                    (bluez_unique_name.is_some() && sender_opt_str == bluez_unique_name.as_deref());
+                let is_bluez_signal = sender_opt_str.as_deref() == Some("org.bluez") || 
+                    (bluez_unique_name.is_some() && sender_opt_str == bluez_unique_name);
 
                 if is_bluez_signal {
-                    let interface_opt_string = match header.interface() {
-                        Ok(Some(i_ref)) => Some(i_ref.as_str().to_string()),
-                        Ok(None) => None,
-                        Err(e) => {
-                            eprintln!("[bluetooth-plugin] Error getting interface from header: {:?}", e);
-                            None
-                        }
-                    };
+                    let interface_opt_string = header.interface()
+                        .map(|i| i.as_str().to_string());
 
-                    let member_opt_string = match header.member() {
-                        Ok(Some(m_ref)) => Some(m_ref.as_str().to_string()),
-                        Ok(None) => None,
-                        Err(e) => {
-                            eprintln!("[bluetooth-plugin] Error getting member from header: {:?}", e);
-                            None
-                        }
-                    };
+                    let member_opt_string = header.member()
+                        .map(|m| m.as_str().to_string());
 
-                    let path_opt_string = match header.path() {
-                        Ok(Some(p_ref)) => Some(p_ref.as_str().to_string()),
-                        Ok(None) => None,
-                        Err(e) => {
-                            eprintln!("[bluetooth-plugin] Error getting path from header: {:?}", e);
-                            None
-                        }
-                    };
+                    let path_opt_string = header.path()
+                        .map(|p| p.as_str().to_string());
                     
                     match (interface_opt_string.as_deref(), member_opt_string.as_deref()) {
                         (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesAdded")) => {
-                            match msg.body::<(ObjectPath<'_>, HashMap<String, HashMap<String, OwnedValue>>)>() {
+                            match msg.body().deserialize::<(ObjectPath<'_>, HashMap<String, HashMap<String, OwnedValue>>)>() {
                                 Ok((object_path, interfaces_and_properties)) => {
                                   let path_string = object_path.to_string();
                                   
@@ -250,7 +236,7 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                               }
                         }
                         (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesRemoved")) => {
-                            match msg.body::<(ObjectPath<'_>, Vec<String>)>() {
+                            match msg.body().deserialize::<(ObjectPath<'_>, Vec<String>)>() {
                                 Ok((object_path, interfaces_removed)) => {
                                   let path_string = object_path.to_string();
                                   
@@ -281,7 +267,7 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                         (Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")) => {
                             
                             if let Some(p_str) = path_opt_string {
-                                match msg.body::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>() {
+                                match msg.body().deserialize::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>() {
                                     Ok((changed_interface_name, changed_properties, _invalidated_properties)) => {
                                         if changed_interface_name == "org.bluez.Adapter1" {
                                             match get_adapter_state(p_str.clone()).await {

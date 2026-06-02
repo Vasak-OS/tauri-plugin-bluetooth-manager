@@ -2,15 +2,33 @@ use crate::models::{AdapterInfo, DeviceInfo};
 use crate::Result;
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use tauri::{State};
+use tauri::State;
 use zbus::{
-    zvariant::{
-        from_slice, EncodingContext, ObjectPath, OwnedObjectPath, OwnedValue, Value as ZbusValue,
-    },
+    zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value as ZbusValue},
     Connection, Proxy,
 };
 use crate::desktop::BluetoothManager;
 use tracing::{info, error};
+
+fn get_prop_vec(props: &HashMap<String, OwnedValue>, key: &str) -> Vec<String> {
+    props.get(key).and_then(|v| {
+        match &**v {
+            ZbusValue::Array(arr) => arr.iter()
+                .map(|e| String::try_from(e).ok())
+                .collect::<Option<Vec<_>>>(),
+            _ => None,
+        }
+    }).unwrap_or_default()
+}
+
+macro_rules! get_prop {
+    ($props:expr, $key:expr, $ty:ty) => {
+        $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok())
+    };
+    ($props:expr, $key:expr, $ty:ty, $default:expr) => {
+        $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok()).unwrap_or($default)
+    };
+}
 
 #[tauri::command]
 pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
@@ -27,7 +45,7 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
 
     // Decodificar correctamente como HashMap<ObjectPath, HashMap<String, HashMap<String, OwnedValue>>>
     let managed_objects: HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>> =
-        reply_message.body()?;
+        reply_message.body().deserialize()?;
 
     let mut adapters = Vec::new();
 
@@ -35,53 +53,18 @@ pub async fn list_adapters() -> Result<Vec<AdapterInfo>> {
         if let Some(props) = interfaces.get("org.bluez.Adapter1") {
             adapters.push(AdapterInfo {
                 path: object_path.to_string(),
-                address: props
-                    .get("Address")
-                    .and_then(|v| String::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                name: props
-                    .get("Name")
-                    .and_then(|v| String::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                alias: props
-                    .get("Alias")
-                    .and_then(|v| String::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                class: props
-                    .get("Class")
-                    .and_then(|v| u32::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                powered: props
-                    .get("Powered")
-                    .and_then(|v| bool::try_from(v.clone()).ok())
-                    .unwrap_or(false),
-                discoverable: props
-                    .get("Discoverable")
-                    .and_then(|v| bool::try_from(v.clone()).ok())
-                    .unwrap_or(false),
-                discoverable_timeout: props
-                    .get("DiscoverableTimeout")
-                    .and_then(|v| u32::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                pairable: props
-                    .get("Pairable")
-                    .and_then(|v| bool::try_from(v.clone()).ok())
-                    .unwrap_or(false),
-                pairable_timeout: props
-                    .get("PairableTimeout")
-                    .and_then(|v| u32::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                discovering: props
-                    .get("Discovering")
-                    .and_then(|v| bool::try_from(v.clone()).ok())
-                    .unwrap_or(false),
-                uuids: props
-                    .get("UUIDs")
-                    .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-                    .unwrap_or_default(),
-                modalias: props
-                    .get("Modalias")
-                    .and_then(|v| String::try_from(v.clone()).ok()),
+                address: get_prop!(props, "Address", String, String::new()),
+                name: get_prop!(props, "Name", String, String::new()),
+                alias: get_prop!(props, "Alias", String, String::new()),
+                class: get_prop!(props, "Class", u32, 0),
+                powered: get_prop!(props, "Powered", bool, false),
+                discoverable: get_prop!(props, "Discoverable", bool, false),
+                discoverable_timeout: get_prop!(props, "DiscoverableTimeout", u32, 0),
+                pairable: get_prop!(props, "Pairable", bool, false),
+                pairable_timeout: get_prop!(props, "PairableTimeout", u32, 0),
+                discovering: get_prop!(props, "Discovering", bool, false),
+                uuids: get_prop_vec(props, "UUIDs"),
+                modalias: get_prop!(props, "Modalias", String),
             });
         }
     }
@@ -123,59 +106,22 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
         .call_method("GetAll", &("org.bluez.Adapter1",))
         .await?;
 
-    let body_bytes_owned: Vec<u8> = reply_message.body_as_bytes()?.to_vec();
-    let ctxt = EncodingContext::<byteorder::NativeEndian>::new_dbus(0);
-    let props: HashMap<String, OwnedValue> = from_slice(&body_bytes_owned, ctxt)?;
+    let props: HashMap<String, OwnedValue> = reply_message.body().deserialize()?;
 
     Ok(AdapterInfo {
         path: adapter_path,
-        address: props
-            .get("Address")
-            .and_then(|v| String::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        name: props
-            .get("Name")
-            .and_then(|v| String::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        alias: props
-            .get("Alias")
-            .and_then(|v| String::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        class: props
-            .get("Class")
-            .and_then(|v| u32::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        powered: props
-            .get("Powered")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        discoverable: props
-            .get("Discoverable")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        discoverable_timeout: props
-            .get("DiscoverableTimeout")
-            .and_then(|v| u32::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        pairable: props
-            .get("Pairable")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        pairable_timeout: props
-            .get("PairableTimeout")
-            .and_then(|v| u32::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        discovering: props
-            .get("Discovering")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        uuids: props
-            .get("UUIDs")
-            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        modalias: props
-            .get("Modalias")
-            .and_then(|v| String::try_from(v.clone()).ok()),
+        address: get_prop!(props, "Address", String, String::new()),
+        name: get_prop!(props, "Name", String, String::new()),
+        alias: get_prop!(props, "Alias", String, String::new()),
+        class: get_prop!(props, "Class", u32, 0),
+        powered: get_prop!(props, "Powered", bool, false),
+        discoverable: get_prop!(props, "Discoverable", bool, false),
+        discoverable_timeout: get_prop!(props, "DiscoverableTimeout", u32, 0),
+        pairable: get_prop!(props, "Pairable", bool, false),
+        pairable_timeout: get_prop!(props, "PairableTimeout", u32, 0),
+        discovering: get_prop!(props, "Discovering", bool, false),
+        uuids: get_prop_vec(&props, "UUIDs"),
+        modalias: get_prop!(props, "Modalias", String),
     })
 }
 
@@ -263,7 +209,7 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
         .await?;
 
     let managed_objects: HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>> =
-        reply_message.body()?;
+        reply_message.body().deserialize()?;
 
     info!("Total managed objects: {}", managed_objects.len());
 
@@ -274,74 +220,33 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
         
         if path_str.starts_with(&adapter_path) {
             if let Some(props) = interfaces.get("org.bluez.Device1") {
-                let device_name = props
-                    .get("Name")
-                    .and_then(|v| String::try_from(v.clone()).ok())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                let device_address = props
-                    .get("Address")
-                    .and_then(|v| String::try_from(v.clone()).ok())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                
+                let device_name = get_prop!(props, "Name", String, "Unknown".to_string());
+                let device_address = get_prop!(props, "Address", String, "Unknown".to_string());
+
                 info!("Found device: {} ({})", device_name, device_address);
-                
+
                 devices.push(DeviceInfo {
                     path: object_path.to_string(),
                     address: device_address,
-                    name: props
-                        .get("Name")
-                        .and_then(|v| String::try_from(v.clone()).ok()),
-                    alias: props
-                        .get("Alias")
-                        .and_then(|v| String::try_from(v.clone()).ok()),
-                    class: props
-                        .get("Class")
-                        .and_then(|v| u32::try_from(v.clone()).ok()),
-                    appearance: props
-                        .get("Appearance")
-                        .and_then(|v| u16::try_from(v.clone()).ok()),
-                    icon: props
-                        .get("Icon")
-                        .and_then(|v| String::try_from(v.clone()).ok()),
-                    paired: props
-                        .get("Paired")
-                        .and_then(|v| bool::try_from(v.clone()).ok())
-                        .unwrap_or(false),
-                    trusted: props
-                        .get("Trusted")
-                        .and_then(|v| bool::try_from(v.clone()).ok())
-                        .unwrap_or(false),
-                    blocked: props
-                        .get("Blocked")
-                        .and_then(|v| bool::try_from(v.clone()).ok())
-                        .unwrap_or(false),
-                    legacy_pairing: props
-                        .get("LegacyPairing")
-                        .and_then(|v| bool::try_from(v.clone()).ok())
-                        .unwrap_or(false),
-                    rssi: props
-                        .get("RSSI")
-                        .and_then(|v| i16::try_from(v.clone()).ok()),
-                    tx_power: props
-                        .get("TxPower")
-                        .and_then(|v| i16::try_from(v.clone()).ok()),
-                    connected: props
-                        .get("Connected")
-                        .and_then(|v| bool::try_from(v.clone()).ok())
-                        .unwrap_or(false),
-                    uuids: props
-                        .get("UUIDs")
-                        .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-                        .unwrap_or_default(),
+                    name: get_prop!(props, "Name", String),
+                    alias: get_prop!(props, "Alias", String),
+                    class: get_prop!(props, "Class", u32),
+                    appearance: get_prop!(props, "Appearance", u16),
+                    icon: get_prop!(props, "Icon", String),
+                    paired: get_prop!(props, "Paired", bool, false),
+                    trusted: get_prop!(props, "Trusted", bool, false),
+                    blocked: get_prop!(props, "Blocked", bool, false),
+                    legacy_pairing: get_prop!(props, "LegacyPairing", bool, false),
+                    rssi: get_prop!(props, "RSSI", i16),
+                    tx_power: get_prop!(props, "TxPower", i16),
+                    connected: get_prop!(props, "Connected", bool, false),
+                    uuids: get_prop_vec(props, "UUIDs"),
                     adapter: props
                         .get("Adapter")
-                        .and_then(|v| ObjectPath::try_from(v.clone()).ok())
+                        .and_then(|v| ObjectPath::try_from(&**v).ok())
                         .map(|p: ObjectPath| p.to_string())
                         .unwrap_or_default(),
-                    services_resolved: props
-                        .get("ServicesResolved")
-                        .and_then(|v| bool::try_from(v.clone()).ok())
-                        .unwrap_or(false),
+                    services_resolved: get_prop!(props, "ServicesResolved", bool, false),
                 });
             }
         }
@@ -364,70 +269,30 @@ pub async fn get_device_info(device_path: String) -> Result<DeviceInfo> {
 
     let reply_message = proxy.call_method("GetAll", &("org.bluez.Device1",)).await?;
 
-    let body_bytes_owned: Vec<u8> = reply_message.body_as_bytes()?.to_vec();
-    let ctxt = EncodingContext::<byteorder::NativeEndian>::new_dbus(0);
-    let props: HashMap<String, OwnedValue> = from_slice(&body_bytes_owned, ctxt)?;
+    let props: HashMap<String, OwnedValue> = reply_message.body().deserialize()?;
 
     Ok(DeviceInfo {
         path: device_path,
-        address: props
-            .get("Address")
-            .and_then(|v| String::try_from(v.clone()).ok())
-            .unwrap_or_default(),
-        name: props
-            .get("Name")
-            .and_then(|v| String::try_from(v.clone()).ok()),
-        alias: props
-            .get("Alias")
-            .and_then(|v| String::try_from(v.clone()).ok()),
-        class: props
-            .get("Class")
-            .and_then(|v| u32::try_from(v.clone()).ok()),
-        appearance: props
-            .get("Appearance")
-            .and_then(|v| u16::try_from(v.clone()).ok()),
-        icon: props
-            .get("Icon")
-            .and_then(|v| String::try_from(v.clone()).ok()),
-        paired: props
-            .get("Paired")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        trusted: props
-            .get("Trusted")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        blocked: props
-            .get("Blocked")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        legacy_pairing: props
-            .get("LegacyPairing")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        rssi: props
-            .get("RSSI")
-            .and_then(|v| i16::try_from(v.clone()).ok()),
-        tx_power: props
-            .get("TxPower")
-            .and_then(|v| i16::try_from(v.clone()).ok()),
-        connected: props
-            .get("Connected")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
-        uuids: props
-            .get("UUIDs")
-            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-            .unwrap_or_default(),
+        address: get_prop!(props, "Address", String, String::new()),
+        name: get_prop!(props, "Name", String),
+        alias: get_prop!(props, "Alias", String),
+        class: get_prop!(props, "Class", u32),
+        appearance: get_prop!(props, "Appearance", u16),
+        icon: get_prop!(props, "Icon", String),
+        paired: get_prop!(props, "Paired", bool, false),
+        trusted: get_prop!(props, "Trusted", bool, false),
+        blocked: get_prop!(props, "Blocked", bool, false),
+        legacy_pairing: get_prop!(props, "LegacyPairing", bool, false),
+        rssi: get_prop!(props, "RSSI", i16),
+        tx_power: get_prop!(props, "TxPower", i16),
+        connected: get_prop!(props, "Connected", bool, false),
+        uuids: get_prop_vec(&props, "UUIDs"),
         adapter: props
             .get("Adapter")
-            .and_then(|v| ObjectPath::try_from(v.clone()).ok())
+            .and_then(|v| ObjectPath::try_from(&**v).ok())
             .map(|p: ObjectPath| p.to_string())
             .unwrap_or_default(),
-        services_resolved: props
-            .get("ServicesResolved")
-            .and_then(|v| bool::try_from(v.clone()).ok())
-            .unwrap_or(false),
+        services_resolved: get_prop!(props, "ServicesResolved", bool, false),
     })
 }
 
@@ -448,75 +313,37 @@ pub async fn list_paired_devices(adapter_path: String) -> Result<Vec<DeviceInfo>
 
     // Decodificar correctamente como HashMap
     let managed_objects: HashMap<OwnedObjectPath, HashMap<String, HashMap<String, OwnedValue>>> =
-        reply_message.body()?;
+        reply_message.body().deserialize()?;
 
     let mut paired_devices = Vec::new();
 
     for (object_path, interfaces) in managed_objects {
         if object_path.as_str().starts_with(&adapter_path) {
             if let Some(props) = interfaces.get("org.bluez.Device1") {
-                let paired = props
-                    .get("Paired")
-                    .and_then(|v| bool::try_from(v.clone()).ok())
-                    .unwrap_or(false);
+                let paired = get_prop!(props, "Paired", bool, false);
                 if paired {
                     paired_devices.push(DeviceInfo {
                         path: object_path.to_string(),
-                        address: props
-                            .get("Address")
-                            .and_then(|v| String::try_from(v.clone()).ok())
-                            .unwrap_or_default(),
-                        name: props
-                            .get("Name")
-                            .and_then(|v| String::try_from(v.clone()).ok()),
-                        alias: props
-                            .get("Alias")
-                            .and_then(|v| String::try_from(v.clone()).ok()),
-                        class: props
-                            .get("Class")
-                            .and_then(|v| u32::try_from(v.clone()).ok()),
-                        appearance: props
-                            .get("Appearance")
-                            .and_then(|v| u16::try_from(v.clone()).ok()),
-                        icon: props
-                            .get("Icon")
-                            .and_then(|v| String::try_from(v.clone()).ok()),
+                        address: get_prop!(props, "Address", String, String::new()),
+                        name: get_prop!(props, "Name", String),
+                        alias: get_prop!(props, "Alias", String),
+                        class: get_prop!(props, "Class", u32),
+                        appearance: get_prop!(props, "Appearance", u16),
+                        icon: get_prop!(props, "Icon", String),
                         paired,
-                        trusted: props
-                            .get("Trusted")
-                            .and_then(|v| bool::try_from(v.clone()).ok())
-                            .unwrap_or(false),
-                        blocked: props
-                            .get("Blocked")
-                            .and_then(|v| bool::try_from(v.clone()).ok())
-                            .unwrap_or(false),
-                        legacy_pairing: props
-                            .get("LegacyPairing")
-                            .and_then(|v| bool::try_from(v.clone()).ok())
-                            .unwrap_or(false),
-                        rssi: props
-                            .get("RSSI")
-                            .and_then(|v| i16::try_from(v.clone()).ok()),
-                        tx_power: props
-                            .get("TxPower")
-                            .and_then(|v| i16::try_from(v.clone()).ok()),
-                        connected: props
-                            .get("Connected")
-                            .and_then(|v| bool::try_from(v.clone()).ok())
-                            .unwrap_or(false),
-                        uuids: props
-                            .get("UUIDs")
-                            .and_then(|v| Vec::<String>::try_from(v.clone()).ok())
-                            .unwrap_or_default(),
+                        trusted: get_prop!(props, "Trusted", bool, false),
+                        blocked: get_prop!(props, "Blocked", bool, false),
+                        legacy_pairing: get_prop!(props, "LegacyPairing", bool, false),
+                        rssi: get_prop!(props, "RSSI", i16),
+                        tx_power: get_prop!(props, "TxPower", i16),
+                        connected: get_prop!(props, "Connected", bool, false),
+                        uuids: get_prop_vec(props, "UUIDs"),
                         adapter: props
                             .get("Adapter")
-                            .and_then(|v| ObjectPath::try_from(v.clone()).ok())
+                            .and_then(|v| ObjectPath::try_from(&**v).ok())
                             .map(|p: ObjectPath| p.to_string())
                             .unwrap_or_default(),
-                        services_resolved: props
-                            .get("ServicesResolved")
-                            .and_then(|v| bool::try_from(v.clone()).ok())
-                            .unwrap_or(false),
+                        services_resolved: get_prop!(props, "ServicesResolved", bool, false),
                     });
                 }
             }
