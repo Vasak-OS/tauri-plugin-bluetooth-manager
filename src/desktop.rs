@@ -339,7 +339,6 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                             if let Some(p_str) = path_opt_string {
                                 match get_device_info(p_str.clone()).await {
                                     Ok(device_info) => {
-                                        
                                         app.emit("bluetooth-change", BluetoothChange {
                                             change_type: "device-disconnected".to_string(),
                                             data: serde_json::to_value(device_info).unwrap_or_default(),
@@ -347,12 +346,15 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                                     }
                                     Err(e) => {
                                         eprintln!("[bluetooth-plugin] Error getting device info for disconnected device {}: {:?}", p_str, e);
+                                        app.emit("bluetooth-change", BluetoothChange {
+                                            change_type: "device-disconnected".to_string(),
+                                            data: serde_json::json!({ "path": p_str }),
+                                        }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit fallback device-disconnected: {}", err));
                                     }
                                 }
                             }
                         }
                         (Some("org.bluez.Device1"), Some("Connected")) => {
-                            
                             if let Some(p_str) = path_opt_string {
                                 match get_device_info(p_str.clone()).await {
                                     Ok(device_info) => {
@@ -363,6 +365,10 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                                     }
                                     Err(e) => {
                                         eprintln!("[bluetooth-plugin] Error getting device info for connected device {}: {:?}", p_str, e);
+                                        app.emit("bluetooth-change", BluetoothChange {
+                                            change_type: "device-connected".to_string(),
+                                            data: serde_json::json!({ "path": p_str, "connected": true }),
+                                        }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit fallback device-connected: {}", err));
                                     }
                                 }
                             }

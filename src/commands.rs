@@ -371,8 +371,23 @@ pub async fn connect_device(device_path: String) -> Result<()> {
     )
     .await?;
 
-    proxy.call_method("Connect", &()).await?;
-    Ok(())
+    match proxy.call_method("Connect", &()).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("InProgress")
+                || msg.contains("br-connection-busy")
+                || msg.contains("AlreadyConnected")
+                || msg.contains("br-connection-already-connected")
+            {
+                info!("Device already connecting or connected, continuing...");
+                Ok(())
+            } else {
+                error!("Error connecting to device: {}", msg);
+                Err(e.into())
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -386,8 +401,22 @@ pub async fn disconnect_device(device_path: String) -> Result<()> {
     )
     .await?;
 
-    proxy.call_method("Disconnect", &()).await?;
-    Ok(())
+    match proxy.call_method("Disconnect", &()).await {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("NotConnected")
+                || msg.contains("br-connection-not-connected")
+                || msg.contains("br-connection-already-disconnected")
+            {
+                info!("Device already disconnected, continuing...");
+                Ok(())
+            } else {
+                error!("Error disconnecting device: {}", msg);
+                Err(e.into())
+            }
+        }
+    }
 }
 
 #[tauri::command]
