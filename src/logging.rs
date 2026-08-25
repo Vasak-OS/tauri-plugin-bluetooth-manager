@@ -36,11 +36,20 @@ pub fn init_logging() {
             .with_ansi(true)
             .boxed();
 
-        tracing_subscriber::registry()
+        // `try_init` y no `init`: si la aplicación anfitriona ya instaló un
+        // logger global, `init()` **paniquea y no arranca**. Un plugin no puede
+        // tirar la aplicación por cómo quedó configurado el registro; si no
+        // puede instalarse, se queda sin su propio archivo y listo.
+        if let Err(error) = tracing_subscriber::registry()
             .with(env_filter)
             .with(file_layer)
             .with(stdout_layer)
-            .init();
+            .try_init()
+        {
+            eprintln!(
+                "[bluetooth] el registro propio no se pudo instalar ({error});                  los mensajes van al del anfitrión"
+            );
+        }
     });
 }
 
