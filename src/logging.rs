@@ -16,7 +16,11 @@ fn abrir_archivo_de_registro(ruta: &std::path::Path) -> Option<std::fs::File> {
         let _ = std::fs::create_dir_all(padre);
     }
 
-    match std::fs::OpenOptions::new().create(true).append(true).open(ruta) {
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(ruta)
+    {
         Ok(archivo) => Some(archivo),
         Err(error) => {
             eprintln!(

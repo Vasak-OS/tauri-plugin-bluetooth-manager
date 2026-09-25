@@ -1,24 +1,26 @@
+use crate::desktop::BluetoothManager;
 use crate::models::{AdapterInfo, DeviceInfo};
 use crate::Result;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use tauri::State;
+use tracing::{error, info};
 use zbus::{
     zvariant::{ObjectPath, OwnedObjectPath, OwnedValue, Value as ZbusValue},
     Connection, Proxy,
 };
-use crate::desktop::BluetoothManager;
-use tracing::{info, error};
 
 fn get_prop_vec(props: &HashMap<String, OwnedValue>, key: &str) -> Vec<String> {
-    props.get(key).and_then(|v| {
-        match &**v {
-            ZbusValue::Array(arr) => arr.iter()
+    props
+        .get(key)
+        .and_then(|v| match &**v {
+            ZbusValue::Array(arr) => arr
+                .iter()
                 .map(|e| String::try_from(e).ok())
                 .collect::<Option<Vec<_>>>(),
             _ => None,
-        }
-    }).unwrap_or_default()
+        })
+        .unwrap_or_default()
 }
 
 macro_rules! get_prop {
@@ -26,7 +28,10 @@ macro_rules! get_prop {
         $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok())
     };
     ($props:expr, $key:expr, $ty:ty, $default:expr) => {
-        $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok()).unwrap_or($default)
+        $props
+            .get($key)
+            .and_then(|v| <$ty>::try_from(&**v).ok())
+            .unwrap_or($default)
     };
 }
 
@@ -128,7 +133,7 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
 #[tauri::command]
 pub async fn start_scan(adapter_path: String) -> Result<()> {
     info!("Starting scan on adapter: {}", adapter_path);
-    
+
     let conn = Connection::system().await?;
     let proxy = Proxy::new(
         &conn,
@@ -137,7 +142,7 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
         "org.bluez.Adapter1",
     )
     .await?;
-    
+
     match proxy.call_method("StartDiscovery", &()).await {
         Ok(_) => {
             info!("Scan started successfully");
@@ -160,7 +165,7 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
 #[tauri::command]
 pub async fn stop_scan(adapter_path: String) -> Result<()> {
     info!("Stopping scan on adapter: {}", adapter_path);
-    
+
     let conn = Connection::system().await?;
     let proxy = Proxy::new(
         &conn,
@@ -169,7 +174,7 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
         "org.bluez.Adapter1",
     )
     .await?;
-    
+
     match proxy.call_method("StopDiscovery", &()).await {
         Ok(_) => {
             info!("Scan stopped successfully");
@@ -178,9 +183,10 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
         Err(e) => {
             let msg = e.to_string();
             error!("StopDiscovery error: {}", msg);
-            if msg.contains("No discovery started") 
+            if msg.contains("No discovery started")
                 || msg.contains("org.bluez.Error.Failed")
-                || msg.contains("org.bluez.Error.NotReady") {
+                || msg.contains("org.bluez.Error.NotReady")
+            {
                 info!("No active scan to stop, continuing...");
                 Ok(())
             } else {
@@ -194,7 +200,7 @@ pub async fn stop_scan(adapter_path: String) -> Result<()> {
 #[tauri::command]
 pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
     info!("Listing devices for adapter: {}", adapter_path);
-    
+
     let conn = Connection::system().await?;
     let object_manager_proxy = Proxy::new(
         &conn,
@@ -218,14 +224,14 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
     for (object_path, interfaces) in managed_objects {
         let path_str = object_path.as_str();
         let has_device_interface = interfaces.contains_key("org.bluez.Device1");
-        
+
         info!(
             "Object path: {} | has Device1: {} | starts_with adapter: {}",
             path_str,
             has_device_interface,
             path_str.starts_with(&adapter_path)
         );
-        
+
         if path_str.starts_with(&adapter_path) {
             if let Some(props) = interfaces.get("org.bluez.Device1") {
                 let device_name = get_prop!(props, "Name", String, "Unknown".to_string());
@@ -259,7 +265,7 @@ pub async fn list_devices(adapter_path: String) -> Result<Vec<DeviceInfo>> {
             }
         }
     }
-    
+
     info!("Total devices found: {}", devices.len());
     Ok(devices)
 }
@@ -420,8 +426,6 @@ pub async fn disconnect_device(device_path: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn bluetooth_plugin_status(
-    state: State<'_, BluetoothManager>
-) -> Result<bool> {
+pub async fn bluetooth_plugin_status(state: State<'_, BluetoothManager>) -> Result<bool> {
     Ok(*state.initialized.lock().unwrap())
 }
