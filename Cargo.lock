@@ -3623,7 +3623,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-bluetooth-manager"
-version = "2.0.3"
+version = "2.0.4"
 dependencies = [
  "dirs",
  "futures",
