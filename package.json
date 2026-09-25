@@ -1,6 +1,6 @@
 {
   "name": "@vasakgroup/plugin-bluetooth-manager",
-  "version": "2.0.4",
+  "version": "2.1.0",
   "author": "Joaquin (Pato) Decima <jdecima@vasak.net.ar>",
   "description": "A Tauri plugin to manage Bluetooth adapters and devices in Linux.",
   "type": "module",
@@ -22,12 +22,17 @@
     "pretest": "bun run build"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.0"
+    "@tauri-apps/api": "^2.11.1"
   },
   "devDependencies": {
-    "@rollup/plugin-typescript": "^11.1.6",
-    "rollup": "^4.61.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "rollup": "^4.63.5",
     "typescript": "^5.9.3",
     "tslib": "^2.8.1"
+  },
+  "vasak": {
+    "bibliotecasAtrasadas": {
+      "typescript": "Se queda en la 5.9: la 7.0 es el compilador nativo y no trae la API de JavaScript que @rollup/plugin-typescript usa para emitir (el build cae con «Cannot read properties of undefined (reading 'ES2015')»). Sale cuando @rollup/plugin-typescript soporte TypeScript 7, o cuando el build pase a otro emisor de declaraciones."
+    }
   }
 }

@@ -9,8 +9,9 @@ pub use models::*;
 mod commands;
 mod desktop;
 mod error;
-mod models;
 mod logging;
+mod models;
+mod properties;
 
 pub use error::{Error, Result};
 

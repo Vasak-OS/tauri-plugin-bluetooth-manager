@@ -116,10 +116,12 @@ The plugin communicates with **BlueZ** (`org.bluez`) through the **D-Bus system 
 | `org.freedesktop.DBus.Properties` | Read/write adapter and device properties |
 | `org.bluez.Adapter1` | Discover, power, configure adapters |
 | `org.bluez.Device1` | Connect, disconnect, pair devices |
+| `org.bluez.Battery1` | Battery percentage of the devices that publish it (optional) |
 
 ### Key Implementation Details
 
-- **Property extraction**: BlueZ returns all properties wrapped in D-Bus variants. The plugin auto-unwraps them using `TryFrom<&Value>` and a `get_prop!` macro for ergonomic access.
+- **Property extraction**: BlueZ returns all properties wrapped in D-Bus variants. `src/properties.rs` unwraps them with `TryFrom<&Value>` and builds `AdapterInfo` / `DeviceInfo` in one place, shared by the commands and the signal listener, so it can be tested without a bus.
+- **Battery**: `org.bluez.Battery1` is optional. `getDeviceInfo` reads it with a second `GetAll` on the same object and swallows the error BlueZ returns when the interface is missing; the `battery` field is then absent, which means "unknown" and is not the same as `0`. Battery changes arrive as `device-property-changed`.
 - **Real-time updates**: The plugin subscribes to BlueZ signals (`InterfacesAdded`, `InterfacesRemoved`, `PropertiesChanged`) via the D-Bus system bus and emits Tauri events to the frontend.
 - **Throttling**: Device property changes are throttled to 500ms to avoid flooding the frontend with rapid updates (e.g., RSSI fluctuations during scanning).
 - **Error resilience**: D-Bus errors like `InProgress`, `AlreadyConnected`, `NotConnected`, etc. are handled gracefully instead of propagating as hard errors.
@@ -167,6 +169,7 @@ interface DeviceInfo {
   uuids: string[];            // Supported UUIDs
   adapter: string;            // D-Bus path of parent adapter
   servicesResolved: boolean;  // All services are resolved
+  battery?: number;           // Battery percentage (0-100); absent when the device does not publish org.bluez.Battery1 (absent != 0)
 }
 
 /** Event payload for real-time Bluetooth changes */
@@ -314,7 +317,7 @@ await listen('bluetooth-change', (event) => {
 | `device-removed` | `{ path: string }` | Device is removed/unpaired |
 | `device-connected` | `DeviceInfo` | Device connects |
 | `device-disconnected` | `DeviceInfo` | Device disconnects |
-| `device-property-changed` | `DeviceInfo` | Device property changes (RSSI, name, etc.) |
+| `device-property-changed` | `DeviceInfo` | Device property changes (RSSI, name, battery, etc.), including `org.bluez.Battery1` appearing on an already known device |
 | `error` | `{ message: string }` | Internal plugin error |
 | `dbus-error` | `{ message: string }` | D-Bus stream error (fatal, listener stops) |
 
@@ -334,7 +337,7 @@ await listen('bluetooth-change', (event) => {
 | `start_scan` | `adapter_path` | `()` | `StartDiscovery` |
 | `stop_scan` | `adapter_path` | `()` | `StopDiscovery` |
 | `list_devices` | `adapter_path` | `Vec<DeviceInfo>` | `GetManagedObjects` |
-| `get_device_info` | `device_path` | `DeviceInfo` | `Properties.GetAll` |
+| `get_device_info` | `device_path` | `DeviceInfo` | `Properties.GetAll` (Device1, then Battery1 if published) |
 | `list_paired_devices` | `adapter_path` | `Vec<DeviceInfo>` | `GetManagedObjects` |
 | `connect_device` | `device_path` | `()` | `Connect` |
 | `disconnect_device` | `device_path` | `()` | `Disconnect` |
@@ -381,6 +384,8 @@ pub struct DeviceInfo {
     pub uuids: Vec<String>,
     pub adapter: String,
     pub services_resolved: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery: Option<u8>, // org.bluez.Battery1 Percentage; None when not published
 }
 ```
 
@@ -569,6 +574,7 @@ src/
 ├── desktop.rs      # Signal listener, initialization, helper extractors
 ├── error.rs        # Custom error type (thiserror + serde::Serialize)
 ├── models.rs       # AdapterInfo, DeviceInfo, BluetoothChange structs
+├── properties.rs   # Property readers + AdapterInfo/DeviceInfo builders (unit-tested, no D-Bus)
 └── logging.rs      # Tracing subscriber (stdout + file), OnceLock-safe init
 
 guest-js/
@@ -590,7 +596,7 @@ cargo tauri dev
 
 ### Testing
 
-The plugin requires a running D-Bus system bus with BlueZ:
+The unit tests (`src/properties.rs`, `src/logging.rs`) build the property maps by hand and run without a bus, so `cargo test` works on any machine. Exercising the plugin end to end still needs a running D-Bus system bus with BlueZ:
 
 ```bash
 # Ensure BlueZ is available

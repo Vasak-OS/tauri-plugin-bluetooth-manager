@@ -46,6 +46,15 @@ export interface DeviceInfo {
   uuids: string[];
   adapter: string; // ObjectPath del adaptador al que pertenece
   servicesResolved: boolean;
+  /**
+   * Porcentaje de batería (0–100), de `org.bluez.Battery1`.
+   *
+   * Va ausente cuando el dispositivo no publica esa interfaz: la mayoría de
+   * los auriculares y los periféricos nuevos la publican, los demás no.
+   * Ausente es «no lo sé» y no es cero, que es «descargado»: no mostrar el
+   * dato cuando falta, en vez de mostrarlo en cero o vacío.
+   */
+  battery?: number;
 }
 
 export interface BluetoothChange {

@@ -48,6 +48,14 @@ pub struct DeviceInfo {
     pub uuids: Vec<String>,
     pub adapter: String, // ObjectPath del adaptador al que pertenece
     pub services_resolved: bool,
+    /// Porcentaje de batería (0–100) de `org.bluez.Battery1`.
+    ///
+    /// Sólo lo publican los dispositivos que informan batería —la mayoría de
+    /// los auriculares y los periféricos nuevos—. Cuando no la publican el
+    /// campo no va en el JSON: ausente es «no lo sé», y no es lo mismo que
+    /// cero, que es «descargado».
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery: Option<u8>,
     // Podríamos añadir `manufacturer_data: Option<HashMap<u16, Vec<u8>>>`
     // y `service_data: Option<HashMap<String, Vec<u8>>>` si es necesario.
 }
