@@ -11,6 +11,7 @@ mod desktop;
 mod error;
 mod logging;
 mod models;
+mod properties;
 
 pub use error::{Error, Result};
 

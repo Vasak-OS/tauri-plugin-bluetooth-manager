@@ -1,40 +1,19 @@
 use futures::StreamExt;
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{plugin::PluginApi, AppHandle, Emitter, Manager, Runtime};
 use zbus::{
-    zvariant::{ObjectPath, OwnedValue, Value as ZbusValue},
+    zvariant::{ObjectPath, Value as ZbusValue},
     Connection, MessageStream, MessageType, Proxy,
 };
 
-fn get_prop_vec(props: &HashMap<String, OwnedValue>, key: &str) -> Vec<String> {
-    props
-        .get(key)
-        .and_then(|v| match &**v {
-            ZbusValue::Array(arr) => arr
-                .iter()
-                .map(|e| String::try_from(e).ok())
-                .collect::<Option<Vec<_>>>(),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-macro_rules! get_prop {
-    ($props:expr, $key:expr, $ty:ty) => {
-        $props.get($key).and_then(|v| <$ty>::try_from(&**v).ok())
-    };
-    ($props:expr, $key:expr, $ty:ty, $default:expr) => {
-        $props
-            .get($key)
-            .and_then(|v| <$ty>::try_from(&**v).ok())
-            .unwrap_or($default)
-    };
-}
-
 use crate::commands::{get_adapter_state, get_device_info};
 use crate::models::*;
+use crate::properties::{
+    adapter_info_from_props, device_info_from_interfaces, Interfaces, ADAPTER_INTERFACE,
+    BATTERY_INTERFACE, DEVICE_INTERFACE,
+};
 use crate::Result as CrateResult;
 
 pub struct BluetoothManager {
@@ -84,7 +63,14 @@ async fn setup_dbus_subscriptions(conn: &Connection) -> CrateResult<()> {
     )
     .await?;
 
-    // Agregar reglas de coincidencia para señales específicas
+    // Agregar reglas de coincidencia para señales específicas.
+    //
+    // Las reglas filtran por la interfaz de la *señal*, no por la interfaz
+    // cuyas propiedades cambian: un cambio de batería llega como
+    // `PropertiesChanged` de `org.freedesktop.DBus.Properties` con
+    // `org.bluez.Battery1` adentro del cuerpo, y la interfaz nueva llega como
+    // `InterfacesAdded` del ObjectManager. Las dos ya están acá, así que la
+    // batería no necesita una regla propia.
     let rules = vec![
         "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.ObjectManager'",
         "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties'",
@@ -105,55 +91,97 @@ async fn setup_dbus_subscriptions(conn: &Connection) -> CrateResult<()> {
     Ok(())
 }
 
-fn helper_adapter_info_from_props(
-    path: String,
-    props: &HashMap<String, OwnedValue>,
-) -> AdapterInfo {
-    AdapterInfo {
-        path,
-        address: get_prop!(props, "Address", String, String::new()),
-        name: get_prop!(props, "Name", String, String::new()),
-        alias: get_prop!(props, "Alias", String, String::new()),
-        class: get_prop!(props, "Class", u32, 0),
-        powered: get_prop!(props, "Powered", bool, false),
-        discoverable: get_prop!(props, "Discoverable", bool, false),
-        discoverable_timeout: get_prop!(props, "DiscoverableTimeout", u32, 0),
-        pairable: get_prop!(props, "Pairable", bool, false),
-        pairable_timeout: get_prop!(props, "PairableTimeout", u32, 0),
-        discovering: get_prop!(props, "Discovering", bool, false),
-        uuids: get_prop_vec(props, "UUIDs"),
-        modalias: get_prop!(props, "Modalias", String),
+/// Emite un cambio hacia el frontend; si no se puede, lo deja anotado y sigue.
+fn emit_change<R: Runtime>(app: &AppHandle<R>, change_type: &str, data: serde_json::Value) {
+    app.emit(
+        "bluetooth-change",
+        BluetoothChange {
+            change_type: change_type.to_string(),
+            data,
+        },
+    )
+    .unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit {}: {}", change_type, e));
+}
+
+/// Emite un error interno del plugin como evento.
+fn emit_error<R: Runtime>(app: &AppHandle<R>, message: String) {
+    emit_change(app, "error", serde_json::json!({ "message": message }));
+}
+
+/// Vuelve a leer el dispositivo y emite `device-property-changed` con lo que
+/// haya ahora. Es lo que se hace cuando cambia una propiedad de `Device1` o de
+/// `Battery1`, o cuando la batería aparece después de conectar.
+async fn emit_device_property_changed<R: Runtime>(app: &AppHandle<R>, path: &str) {
+    match get_device_info(path.to_string()).await {
+        Ok(device_info) => emit_change(
+            app,
+            "device-property-changed",
+            serde_json::to_value(device_info).unwrap_or_default(),
+        ),
+        Err(e) => {
+            eprintln!(
+                "[bluetooth-plugin] Error getting device info for {}: {:?}",
+                path, e
+            );
+            emit_error(app, format!("Error getting device info: {:?}", e));
+        }
     }
 }
 
-fn helper_device_info_from_props(path: String, props: &HashMap<String, OwnedValue>) -> DeviceInfo {
-    DeviceInfo {
-        path,
-        address: get_prop!(props, "Address", String, String::new()),
-        name: get_prop!(props, "Name", String),
-        alias: get_prop!(props, "Alias", String),
-        class: get_prop!(props, "Class", u32),
-        appearance: get_prop!(props, "Appearance", u16),
-        icon: get_prop!(props, "Icon", String),
-        paired: get_prop!(props, "Paired", bool, false),
-        trusted: get_prop!(props, "Trusted", bool, false),
-        blocked: get_prop!(props, "Blocked", bool, false),
-        legacy_pairing: get_prop!(props, "LegacyPairing", bool, false),
-        rssi: get_prop!(props, "RSSI", i16),
-        tx_power: get_prop!(props, "TxPower", i16),
-        connected: get_prop!(props, "Connected", bool, false),
-        uuids: get_prop_vec(props, "UUIDs"),
-        adapter: props
-            .get("Adapter")
-            .and_then(|v| ObjectPath::try_from(&**v).ok())
-            .map(|p: ObjectPath| p.to_string())
-            .unwrap_or_default(),
-        services_resolved: get_prop!(props, "ServicesResolved", bool, false),
+/// `InterfacesAdded`: apareció un adaptador, un dispositivo, o una interfaz
+/// nueva sobre un objeto que ya existía.
+async fn handle_interfaces_added<R: Runtime>(
+    app: &AppHandle<R>,
+    path: String,
+    interfaces: &Interfaces,
+) {
+    // Detectar cambios de adaptadores
+    if let Some(adapter_props) = interfaces.get(ADAPTER_INTERFACE) {
+        let adapter_info = adapter_info_from_props(path.clone(), adapter_props);
+        emit_change(
+            app,
+            "adapter-added",
+            serde_json::to_value(adapter_info).unwrap_or_default(),
+        );
+    }
+
+    // Detectar cambios de dispositivos. Si la batería viene en el mismo
+    // mensaje, `device_info_from_interfaces` ya la toma.
+    if let Some(device_info) = device_info_from_interfaces(path.clone(), interfaces) {
+        emit_change(
+            app,
+            "device-added",
+            serde_json::to_value(device_info).unwrap_or_default(),
+        );
+    } else if interfaces.contains_key(BATTERY_INTERFACE) {
+        // BlueZ suma `Battery1` a un dispositivo que ya existía, un rato
+        // después de conectarlo: el mensaje trae la batería sola, sin
+        // `Device1`. Para el frontend es el mismo dispositivo con un dato
+        // nuevo, así que se lo lee entero y se avisa como cambio de propiedad.
+        emit_device_property_changed(app, &path).await;
+    }
+}
+
+/// `InterfacesRemoved`: se fue un adaptador o un dispositivo.
+fn handle_interfaces_removed<R: Runtime>(
+    app: &AppHandle<R>,
+    path: String,
+    interfaces_removed: &[String],
+) {
+    if interfaces_removed.iter().any(|i| i == ADAPTER_INTERFACE) {
+        emit_change(
+            app,
+            "adapter-removed",
+            serde_json::json!({ "path": path.clone() }),
+        );
+    }
+
+    if interfaces_removed.iter().any(|i| i == DEVICE_INTERFACE) {
+        emit_change(app, "device-removed", serde_json::json!({ "path": path }));
     }
 }
 
 async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
-    use std::time::{Duration, Instant};
     let mut stream = MessageStream::from(conn.clone());
 
     // Throttling state
@@ -190,244 +218,189 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
     };
 
     while let Some(msg_res) = stream.next().await {
-        match msg_res {
-            Ok(msg) => {
-                if msg.message_type() == MessageType::Signal {
-                    let header = msg.header();
-
-                    let sender_opt_str = header.sender().map(|s| s.to_string());
-
-                    let is_bluez_signal = sender_opt_str.as_deref() == Some("org.bluez")
-                        || (bluez_unique_name.is_some() && sender_opt_str == bluez_unique_name);
-
-                    if is_bluez_signal {
-                        let interface_opt_string =
-                            header.interface().map(|i| i.as_str().to_string());
-
-                        let member_opt_string = header.member().map(|m| m.as_str().to_string());
-
-                        let path_opt_string = header.path().map(|p| p.as_str().to_string());
-
-                        match (
-                            interface_opt_string.as_deref(),
-                            member_opt_string.as_deref(),
-                        ) {
-                            (
-                                Some("org.freedesktop.DBus.ObjectManager"),
-                                Some("InterfacesAdded"),
-                            ) => {
-                                match msg.body().deserialize::<(ObjectPath<'_>, HashMap<String, HashMap<String, OwnedValue>>)>() {
-                                Ok((object_path, interfaces_and_properties)) => {
-                                  let path_string = object_path.to_string();
-
-                                  // Detectar cambios de adaptadores
-                                  if let Some(adapter_props) = interfaces_and_properties.get("org.bluez.Adapter1") {
-                                    let adapter_info = helper_adapter_info_from_props(path_string.clone(), adapter_props);
-
-                                    app.emit("bluetooth-change", BluetoothChange {
-                                        change_type: "adapter-added".to_string(),
-                                        data: serde_json::to_value(adapter_info).unwrap_or_default(),
-                                    }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit adapter-added: {}", e));
-                                  }
-
-                                  // Detectar cambios de dispositivos
-                                  if let Some(device_props) = interfaces_and_properties.get("org.bluez.Device1") {
-                                    let device_info = helper_device_info_from_props(path_string.clone(), device_props);
-
-                                    app.emit("bluetooth-change", BluetoothChange {
-                                        change_type: "device-added".to_string(),
-                                        data: serde_json::to_value(device_info).unwrap_or_default(),
-                                    }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit device-added: {}", e));
-                                  }
-                                }
-                                Err(e) => {
-                                  eprintln!("[bluetooth-plugin] Error decoding InterfacesAdded body: {:?}", e);
-                                  app.emit("bluetooth-change", BluetoothChange {
-                                      change_type: "error".to_string(),
-                                      data: serde_json::json!({ "message": format!("Error decoding InterfacesAdded: {:?}", e) }),
-                                  }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit error: {}", err));
-                                }
-                              }
-                            }
-                            (
-                                Some("org.freedesktop.DBus.ObjectManager"),
-                                Some("InterfacesRemoved"),
-                            ) => match msg.body().deserialize::<(ObjectPath<'_>, Vec<String>)>() {
-                                Ok((object_path, interfaces_removed)) => {
-                                    let path_string = object_path.to_string();
-
-                                    if interfaces_removed
-                                        .contains(&"org.bluez.Adapter1".to_string())
-                                    {
-                                        app.emit("bluetooth-change", BluetoothChange {
-                                        change_type: "adapter-removed".to_string(),
-                                        data: serde_json::json!({ "path": path_string.clone() }),
-                                    }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit adapter-removed: {}", e));
-                                    }
-
-                                    if interfaces_removed.contains(&"org.bluez.Device1".to_string())
-                                    {
-                                        app.emit("bluetooth-change", BluetoothChange {
-                                        change_type: "device-removed".to_string(),
-                                        data: serde_json::json!({ "path": path_string }),
-                                    }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit device-removed: {}", e));
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("[bluetooth-plugin] Error decoding InterfacesRemoved body: {:?}", e);
-                                    app.emit("bluetooth-change", BluetoothChange {
-                                      change_type: "error".to_string(),
-                                      data: serde_json::json!({ "message": format!("Error decoding InterfacesRemoved: {:?}", e) }),
-                                  }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit error: {}", err));
-                                }
-                            },
-                            (
-                                Some("org.freedesktop.DBus.Properties"),
-                                Some("PropertiesChanged"),
-                            ) => {
-                                if let Some(p_str) = path_opt_string {
-                                    match msg.body().deserialize::<(
-                                        String,
-                                        HashMap<String, ZbusValue<'_>>,
-                                        Vec<String>,
-                                    )>() {
-                                        Ok((
-                                            changed_interface_name,
-                                            changed_properties,
-                                            _invalidated_properties,
-                                        )) => {
-                                            if changed_interface_name == "org.bluez.Adapter1" {
-                                                match get_adapter_state(p_str.clone()).await {
-                                                    Ok(adapter_info) => {
-                                                        app.emit("bluetooth-change", BluetoothChange {
-                                                        change_type: "adapter-property-changed".to_string(),
-                                                        data: serde_json::to_value(adapter_info).unwrap_or_default(),
-                                                    }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit adapter-property-changed: {}", e));
-                                                    }
-                                                    Err(e) => {
-                                                        eprintln!("[bluetooth-plugin] Error getting adapter state for {}: {:?}", p_str, e);
-                                                        app.emit("bluetooth-change", BluetoothChange {
-                                                        change_type: "error".to_string(),
-                                                        data: serde_json::json!({ "message": format!("Error getting adapter state: {:?}", e) }),
-                                                    }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit error: {}", err));
-                                                    }
-                                                }
-                                            } else if changed_interface_name == "org.bluez.Device1"
-                                            {
-                                                // Throttling logic for device properties
-                                                let critical_keys = [
-                                                    "Connected",
-                                                    "Paired",
-                                                    "Trusted",
-                                                    "Blocked",
-                                                    "Name",
-                                                    "Alias",
-                                                ];
-                                                let is_critical = changed_properties
-                                                    .keys()
-                                                    .any(|k| critical_keys.contains(&k.as_str()));
-
-                                                if !is_critical {
-                                                    if let Some(last) =
-                                                        device_last_update.get(&p_str)
-                                                    {
-                                                        if last.elapsed() < UPDATE_THROTTLE {
-                                                            // Skip this update
-                                                            continue;
-                                                        }
-                                                    }
-                                                    device_last_update
-                                                        .insert(p_str.clone(), Instant::now());
-                                                }
-
-                                                match get_device_info(p_str.clone()).await {
-                                                    Ok(device_info) => {
-                                                        // println!("[bluetooth-plugin] Device property changed: {}", p_str);
-                                                        app.emit("bluetooth-change", BluetoothChange {
-                                                        change_type: "device-property-changed".to_string(),
-                                                        data: serde_json::to_value(device_info).unwrap_or_default(),
-                                                    }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit device-property-changed: {}", e));
-                                                    }
-                                                    Err(e) => {
-                                                        eprintln!("[bluetooth-plugin] Error getting device info for {}: {:?}", p_str, e);
-                                                        app.emit("bluetooth-change", BluetoothChange {
-                                                        change_type: "error".to_string(),
-                                                        data: serde_json::json!({ "message": format!("Error getting device info: {:?}", e) }),
-                                                    }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit error: {}", err));
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("[bluetooth-plugin] Error decoding PropertiesChanged body: {:?}", e);
-                                            app.emit("bluetooth-change", BluetoothChange {
-                                            change_type: "error".to_string(),
-                                            data: serde_json::json!({ "message": format!("Error decoding PropertiesChanged: {:?}", e) }),
-                                        }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit error: {}", err));
-                                        }
-                                    }
-                                } else {
-                                    eprintln!("[bluetooth-plugin] PropertiesChanged signal received without a valid path.");
-                                    app.emit("bluetooth-change", BluetoothChange {
-                                    change_type: "error".to_string(),
-                                    data: serde_json::json!({ "message": "PropertiesChanged signal without path" }),
-                                }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit error: {}", err));
-                                }
-                            }
-                            (Some("org.bluez.Device1"), Some("Disconnected")) => {
-                                if let Some(p_str) = path_opt_string {
-                                    match get_device_info(p_str.clone()).await {
-                                        Ok(device_info) => {
-                                            app.emit("bluetooth-change", BluetoothChange {
-                                            change_type: "device-disconnected".to_string(),
-                                            data: serde_json::to_value(device_info).unwrap_or_default(),
-                                        }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit device-disconnected: {}", e));
-                                        }
-                                        Err(e) => {
-                                            eprintln!("[bluetooth-plugin] Error getting device info for disconnected device {}: {:?}", p_str, e);
-                                            app.emit("bluetooth-change", BluetoothChange {
-                                            change_type: "device-disconnected".to_string(),
-                                            data: serde_json::json!({ "path": p_str }),
-                                        }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit fallback device-disconnected: {}", err));
-                                        }
-                                    }
-                                }
-                            }
-                            (Some("org.bluez.Device1"), Some("Connected")) => {
-                                if let Some(p_str) = path_opt_string {
-                                    match get_device_info(p_str.clone()).await {
-                                        Ok(device_info) => {
-                                            app.emit("bluetooth-change", BluetoothChange {
-                                            change_type: "device-connected".to_string(),
-                                            data: serde_json::to_value(device_info).unwrap_or_default(),
-                                        }).unwrap_or_else(|e| eprintln!("[bluetooth-plugin] Failed to emit device-connected: {}", e));
-                                        }
-                                        Err(e) => {
-                                            eprintln!("[bluetooth-plugin] Error getting device info for connected device {}: {:?}", p_str, e);
-                                            app.emit("bluetooth-change", BluetoothChange {
-                                            change_type: "device-connected".to_string(),
-                                            data: serde_json::json!({ "path": p_str, "connected": true }),
-                                        }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit fallback device-connected: {}", err));
-                                        }
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
+        let msg = match msg_res {
+            Ok(msg) => msg,
             Err(e) => {
                 eprintln!(
                     "[bluetooth-plugin] Error reading from D-Bus message stream: {:?}",
                     e
                 );
-                app.emit("bluetooth-change", BluetoothChange {
-                change_type: "dbus-error".to_string(),
-                data: serde_json::json!({ "message": format!("D-Bus stream error: {:?}", e) }),
-            }).unwrap_or_else(|err| eprintln!("[bluetooth-plugin] Failed to emit dbus-error: {}", err));
+                emit_change(
+                    &app,
+                    "dbus-error",
+                    serde_json::json!({ "message": format!("D-Bus stream error: {:?}", e) }),
+                );
                 break;
             }
+        };
+
+        if msg.message_type() != MessageType::Signal {
+            continue;
+        }
+
+        let header = msg.header();
+        let sender_opt_str = header.sender().map(|s| s.to_string());
+
+        let is_bluez_signal = sender_opt_str.as_deref() == Some("org.bluez")
+            || (bluez_unique_name.is_some() && sender_opt_str == bluez_unique_name);
+
+        if !is_bluez_signal {
+            continue;
+        }
+
+        let interface_opt_string = header.interface().map(|i| i.as_str().to_string());
+        let member_opt_string = header.member().map(|m| m.as_str().to_string());
+        let path_opt_string = header.path().map(|p| p.as_str().to_string());
+
+        match (
+            interface_opt_string.as_deref(),
+            member_opt_string.as_deref(),
+        ) {
+            (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesAdded")) => {
+                match msg.body().deserialize::<(ObjectPath<'_>, Interfaces)>() {
+                    Ok((object_path, interfaces)) => {
+                        handle_interfaces_added(&app, object_path.to_string(), &interfaces).await;
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[bluetooth-plugin] Error decoding InterfacesAdded body: {:?}",
+                            e
+                        );
+                        emit_error(&app, format!("Error decoding InterfacesAdded: {:?}", e));
+                    }
+                }
+            }
+            (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesRemoved")) => {
+                match msg.body().deserialize::<(ObjectPath<'_>, Vec<String>)>() {
+                    Ok((object_path, interfaces_removed)) => {
+                        handle_interfaces_removed(
+                            &app,
+                            object_path.to_string(),
+                            &interfaces_removed,
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[bluetooth-plugin] Error decoding InterfacesRemoved body: {:?}",
+                            e
+                        );
+                        emit_error(&app, format!("Error decoding InterfacesRemoved: {:?}", e));
+                    }
+                }
+            }
+            (Some("org.freedesktop.DBus.Properties"), Some("PropertiesChanged")) => {
+                let Some(p_str) = path_opt_string else {
+                    eprintln!(
+                        "[bluetooth-plugin] PropertiesChanged signal received without a valid path."
+                    );
+                    emit_error(&app, "PropertiesChanged signal without path".to_string());
+                    continue;
+                };
+
+                let body = msg.body();
+                let (changed_interface_name, changed_properties, _invalidated_properties) =
+                    match body
+                        .deserialize::<(String, HashMap<String, ZbusValue<'_>>, Vec<String>)>()
+                    {
+                        Ok(decoded) => decoded,
+                        Err(e) => {
+                            eprintln!(
+                                "[bluetooth-plugin] Error decoding PropertiesChanged body: {:?}",
+                                e
+                            );
+                            emit_error(&app, format!("Error decoding PropertiesChanged: {:?}", e));
+                            continue;
+                        }
+                    };
+
+                if changed_interface_name == ADAPTER_INTERFACE {
+                    match get_adapter_state(p_str.clone()).await {
+                        Ok(adapter_info) => emit_change(
+                            &app,
+                            "adapter-property-changed",
+                            serde_json::to_value(adapter_info).unwrap_or_default(),
+                        ),
+                        Err(e) => {
+                            eprintln!(
+                                "[bluetooth-plugin] Error getting adapter state for {}: {:?}",
+                                p_str, e
+                            );
+                            emit_error(&app, format!("Error getting adapter state: {:?}", e));
+                        }
+                    }
+                } else if changed_interface_name == DEVICE_INTERFACE
+                    || changed_interface_name == BATTERY_INTERFACE
+                {
+                    // Throttling logic for device properties.
+                    //
+                    // Un cambio de batería es un cambio más del dispositivo:
+                    // no es crítico, así que entra por el mismo freno que el
+                    // RSSI, y se avisa con el dispositivo entero releído.
+                    let critical_keys =
+                        ["Connected", "Paired", "Trusted", "Blocked", "Name", "Alias"];
+                    let is_critical = changed_interface_name == DEVICE_INTERFACE
+                        && changed_properties
+                            .keys()
+                            .any(|k| critical_keys.contains(&k.as_str()));
+
+                    if !is_critical {
+                        if let Some(last) = device_last_update.get(&p_str) {
+                            if last.elapsed() < UPDATE_THROTTLE {
+                                // Skip this update
+                                continue;
+                            }
+                        }
+                        device_last_update.insert(p_str.clone(), Instant::now());
+                    }
+
+                    emit_device_property_changed(&app, &p_str).await;
+                }
+            }
+            (Some("org.bluez.Device1"), Some("Disconnected")) => {
+                if let Some(p_str) = path_opt_string {
+                    match get_device_info(p_str.clone()).await {
+                        Ok(device_info) => emit_change(
+                            &app,
+                            "device-disconnected",
+                            serde_json::to_value(device_info).unwrap_or_default(),
+                        ),
+                        Err(e) => {
+                            eprintln!(
+                                "[bluetooth-plugin] Error getting device info for disconnected device {}: {:?}",
+                                p_str, e
+                            );
+                            emit_change(
+                                &app,
+                                "device-disconnected",
+                                serde_json::json!({ "path": p_str }),
+                            );
+                        }
+                    }
+                }
+            }
+            (Some("org.bluez.Device1"), Some("Connected")) => {
+                if let Some(p_str) = path_opt_string {
+                    match get_device_info(p_str.clone()).await {
+                        Ok(device_info) => emit_change(
+                            &app,
+                            "device-connected",
+                            serde_json::to_value(device_info).unwrap_or_default(),
+                        ),
+                        Err(e) => {
+                            eprintln!(
+                                "[bluetooth-plugin] Error getting device info for connected device {}: {:?}",
+                                p_str, e
+                            );
+                            emit_change(
+                                &app,
+                                "device-connected",
+                                serde_json::json!({ "path": p_str, "connected": true }),
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
