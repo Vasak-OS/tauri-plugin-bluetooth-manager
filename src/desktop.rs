@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{plugin::PluginApi, AppHandle, Emitter, Manager, Runtime};
 use zbus::{
@@ -14,6 +14,7 @@ use crate::properties::{
     adapter_info_from_props, device_info_from_interfaces, Interfaces, ADAPTER_INTERFACE,
     BATTERY_INTERFACE, DEVICE_INTERFACE,
 };
+use crate::throttle::{Decision, Throttle};
 use crate::Result as CrateResult;
 
 pub struct BluetoothManager {
@@ -184,9 +185,10 @@ fn handle_interfaces_removed<R: Runtime>(
 async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
     let mut stream = MessageStream::from(conn.clone());
 
-    // Throttling state
-    let mut device_last_update: HashMap<String, Instant> = HashMap::new();
+    // A lo sumo un aviso por dispositivo cada medio segundo, sin perder el
+    // último cambio. Ver `throttle.rs`.
     const UPDATE_THROTTLE: Duration = Duration::from_millis(500);
+    let throttle = Arc::new(Mutex::new(Throttle::new(UPDATE_THROTTLE)));
 
     // Obtener el nombre único de org.bluez para comparación
     let mut bluez_unique_name: Option<String> = None;
@@ -273,6 +275,13 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
             (Some("org.freedesktop.DBus.ObjectManager"), Some("InterfacesRemoved")) => {
                 match msg.body().deserialize::<(ObjectPath<'_>, Vec<String>)>() {
                     Ok((object_path, interfaces_removed)) => {
+                        // Un aviso agendado de un dispositivo que se fue releería
+                        // algo que ya no está.
+                        if interfaces_removed.iter().any(|i| i == DEVICE_INTERFACE) {
+                            if let Ok(mut t) = throttle.lock() {
+                                t.forget(object_path.as_str());
+                            }
+                        }
                         handle_interfaces_removed(
                             &app,
                             object_path.to_string(),
@@ -343,17 +352,28 @@ async fn run_signal_listener<R: Runtime>(conn: Connection, app: AppHandle<R>) {
                             .keys()
                             .any(|k| critical_keys.contains(&k.as_str()));
 
-                    if !is_critical {
-                        if let Some(last) = device_last_update.get(&p_str) {
-                            if last.elapsed() < UPDATE_THROTTLE {
-                                // Skip this update
-                                continue;
-                            }
+                    let decision = throttle
+                        .lock()
+                        .map(|mut t| t.on_change(&p_str, Instant::now(), is_critical))
+                        .unwrap_or(Decision::EmitNow);
+                    match decision {
+                        Decision::EmitNow => emit_device_property_changed(&app, &p_str).await,
+                        Decision::AlreadyScheduled => {}
+                        Decision::EmitIn(espera) => {
+                            let (app, throttle, path) =
+                                (app.clone(), Arc::clone(&throttle), p_str.clone());
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(espera).await;
+                                let sigue = throttle
+                                    .lock()
+                                    .map(|mut t| t.fired(&path, Instant::now()))
+                                    .unwrap_or(false);
+                                if sigue {
+                                    emit_device_property_changed(&app, &path).await;
+                                }
+                            });
                         }
-                        device_last_update.insert(p_str.clone(), Instant::now());
                     }
-
-                    emit_device_property_changed(&app, &p_str).await;
                 }
             }
             (Some("org.bluez.Device1"), Some("Disconnected")) => {
