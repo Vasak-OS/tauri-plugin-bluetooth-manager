@@ -175,6 +175,7 @@ interface DeviceInfo {
 /** Event payload for real-time Bluetooth changes */
 interface BluetoothChange {
   changeType: string;         // Type of change (see Events)
+  change_type: string;        // Deprecated: same value as changeType, removed in the next major
   data: any;                  // AdapterInfo, DeviceInfo, or path
 }
 ```
@@ -348,7 +349,10 @@ await listen('bluetooth-change', (event) => {
 `src/models.rs`:
 
 ```rust
+// Every struct sent to the frontend is serialized in camelCase
+// (`discoverableTimeout`, `legacyPairing`, `txPower`, ...), matching guest-js.
 #[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct AdapterInfo {
     pub path: String,
     pub address: String,
@@ -366,6 +370,7 @@ pub struct AdapterInfo {
 }
 
 #[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceInfo {
     pub path: String,
     pub address: String,

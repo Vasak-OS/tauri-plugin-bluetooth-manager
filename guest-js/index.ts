@@ -59,6 +59,12 @@ export interface DeviceInfo {
 
 export interface BluetoothChange {
   changeType: string;
+  /**
+   * El mismo valor que `changeType`, con el nombre de hasta la 2.1.
+   *
+   * @deprecated Usar `changeType`. Se va en la próxima versión mayor.
+   */
+  change_type: string;
   data: any;
 }
 
