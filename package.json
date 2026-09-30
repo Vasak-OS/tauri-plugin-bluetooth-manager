@@ -34,7 +34,7 @@
     "bibliotecasAtrasadas": {
       "typescript": "Se queda en la 5.9: la 7.0 es el compilador nativo y no trae la API de JavaScript que @rollup/plugin-typescript usa para emitir (el build cae con «Cannot read properties of undefined (reading 'ES2015')»). Sale cuando @rollup/plugin-typescript soporte TypeScript 7, o cuando el build pase a otro emisor de declaraciones.",
       "zbus (crate de Rust)": "Se queda en la 4: la 5 cambia la API de proxies y conexiones, y tauri-plugin-network-manager, vasak-settings y el servicio vasak-accounts siguen en la 4; subirla sola deja dos zbus en el binario de cada aplicación. Sale cuando el taller pase junto a la 5.",
-      "tauri (crate de Rust)": "El bloqueo queda en la 2.11.6 porque `rust-version = \"1.77.2\"` hace que el resolvedor elija lo compatible con esa versión, y la 2.12 pide Rust 1.90. Es igual en los nueve complementos del taller: subir la versión mínima de Rust es una decisión de todos a la vez, no de uno. No afecta a las aplicaciones, que resuelven tauri con su propio bloqueo. Sale cuando los complementos suban `rust-version` juntos."
+      "tauri (crate de Rust)": "El bloqueo de este repositorio queda en la 2.11.6 porque `.cargo/config.toml` pone `incompatible-rust-versions = \"fallback\"` y `rust-version` es 1.77.2, y la 2.12 pide Rust 1.90. Es igual en los nueve complementos del taller: subir la versión mínima de Rust es una decisión de todos a la vez, no de uno. Esa configuración es de este repositorio: las aplicaciones resuelven tauri con su propio bloqueo y su propia configuración, así que no las ata. Sale cuando los complementos suban `rust-version` juntos."
     }
   }
 }

@@ -72,11 +72,38 @@ pub struct DeviceInfo {
 /// que perdiera esa clave les dejaría el panel sin enterarse de nada, sin un
 /// solo error. La clave vieja se va en la próxima mayor.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(try_from = "BluetoothChangeWire")]
 pub struct BluetoothChange {
-    #[serde(alias = "change_type")]
     pub change_type: String,
     pub data: serde_json::Value,
+}
+
+/// Lo que llega por el cable: una clave, la otra o las dos, que es lo que
+/// manda `Serialize`. Con `#[serde(alias)]` las dos serían el mismo campo y el
+/// evento que emite este mismo plugin no se podría volver a leer
+/// («duplicate field»).
+#[derive(Deserialize)]
+struct BluetoothChangeWire {
+    #[serde(rename = "changeType")]
+    camel: Option<String>,
+    #[serde(rename = "change_type")]
+    snake: Option<String>,
+    data: serde_json::Value,
+}
+
+impl TryFrom<BluetoothChangeWire> for BluetoothChange {
+    type Error = &'static str;
+
+    fn try_from(wire: BluetoothChangeWire) -> Result<Self, Self::Error> {
+        let change_type = wire
+            .camel
+            .or(wire.snake)
+            .ok_or("falta `changeType` (o `change_type`)")?;
+        Ok(Self {
+            change_type,
+            data: wire.data,
+        })
+    }
 }
 
 impl Serialize for BluetoothChange {
@@ -267,6 +294,24 @@ mod tests {
             let change: BluetoothChange = serde_json::from_value(json).unwrap();
             assert_eq!(change.change_type, "error", "con `{key}`");
         }
+    }
+
+    #[test]
+    fn bluetooth_change_se_vuelve_a_leer_tal_como_sale() {
+        let change = BluetoothChange {
+            change_type: "device-connected".into(),
+            data: serde_json::json!({ "path": "/org/bluez/hci0/dev_AA" }),
+        };
+        let json = serde_json::to_value(&change).unwrap();
+        let back: BluetoothChange = serde_json::from_value(json).unwrap();
+        assert_eq!(back.change_type, "device-connected");
+        assert_eq!(back.data, change.data);
+    }
+
+    #[test]
+    fn bluetooth_change_sin_ninguno_de_los_dos_nombres_es_un_error() {
+        let json = serde_json::json!({ "data": {} });
+        assert!(serde_json::from_value::<BluetoothChange>(json).is_err());
     }
 
     #[test]
