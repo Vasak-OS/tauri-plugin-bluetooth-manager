@@ -1,6 +1,6 @@
 [package]
 name = "tauri-plugin-bluetooth-manager"
-version = "2.1.0"
+version = "2.1.1"
 authors = [ "Joaquin (Pato) Decima <jdecima@vasak.net.ar>", "Vasak Group" ]
 description = "A Tauri plugin to manage Bluetooth adapters and devices in Linux."
 edition = "2021"
@@ -23,6 +23,9 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 # cuando tauri pase a `dirs` 7.
 dirs = "6"
 thiserror = "2"
+# Sólo para esperar el final de la ventana del freno (`throttle.rs`). Ya viene
+# con tauri; esto pide la característica `time`, no otra copia.
+tokio = { version = "1", features = ["time"] }
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }

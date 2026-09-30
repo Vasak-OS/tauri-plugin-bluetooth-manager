@@ -12,6 +12,7 @@ mod error;
 mod logging;
 mod models;
 mod properties;
+mod throttle;
 
 pub use error::{Error, Result};
 
