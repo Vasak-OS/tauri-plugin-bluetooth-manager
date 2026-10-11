@@ -7,6 +7,7 @@ use tauri::{
 pub use models::*;
 
 mod commands;
+mod company_identifiers;
 mod desktop;
 mod error;
 mod logging;
