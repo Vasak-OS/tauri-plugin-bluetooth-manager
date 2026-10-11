@@ -269,3 +269,33 @@ pub async fn disconnect_device(device_path: String) -> Result<()> {
 pub async fn bluetooth_plugin_status(state: State<'_, BluetoothManager>) -> Result<bool> {
     Ok(*state.initialized.lock().unwrap())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Guarda de regresión del arreglo de ciclo de vida de la conexión D-Bus.
+    //
+    // En BlueZ el descubrimiento vive atado al cliente que lo pidió: cuando ese
+    // cliente deja el bus, BlueZ lo detiene por él. Por eso `start_scan` y
+    // `stop_scan` TIENEN que reusar la `Connection` persistente del estado
+    // (`State<BluetoothManager>`), y no abrir una `Connection::system()` propia
+    // que `zbus` cierra al retornar el comando —lo que mataba el escaneo al
+    // instante y dejaba a la aplicación sin ver dispositivos que la terminal sí
+    // encontraba—.
+    //
+    // Esta prueba NO levanta un bus: el fallo real sólo se manifiesta contra un
+    // BlueZ de verdad, y eso no es reproducible en CI. Lo que fija es la
+    // precondición estructural del arreglo —que los dos comandos sigan
+    // recibiendo el `State` por el que llega la conexión compartida—. Si alguien
+    // revierte las firmas a las del commit base (`fn(String)`, sin `State`),
+    // este archivo deja de compilar y la suite se pone en rojo. No cubre que el
+    // cuerpo use `state.conn`; para eso hace falta el bus.
+    fn takes_adapter_path_and_state<Fut>(_f: fn(String, State<'static, BluetoothManager>) -> Fut) {}
+
+    #[test]
+    fn el_escaneo_recibe_el_estado_para_reusar_la_conexion_persistente() {
+        takes_adapter_path_and_state(start_scan);
+        takes_adapter_path_and_state(stop_scan);
+    }
+}
