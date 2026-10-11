@@ -75,6 +75,77 @@ pub(crate) fn battery_percentage(battery: Option<&Properties>) -> Option<u8> {
     battery.and_then(|props| read::<u8>(props, "Percentage"))
 }
 
+/// Lee un array de bytes (`ay`) desde el valor de una entrada de
+/// `ManufacturerData`/`ServiceData`.
+///
+/// Gotcha de zvariant: en el mapa `a{sv}` de nivel superior (lo que entrega
+/// `GetAll`) el variant ya viene desenvuelto, pero el variant anidado dentro de
+/// un `a{qv}`/`a{sv}` **no**: al iterar el `Dict`, cada valor suele llegar como
+/// `Value::Value(Box<Value>)` que hay que desenvolver una vez antes de llegar
+/// al `Value::Array` de `U8`. Este ayudante tolera las dos formas. Devuelve
+/// `None` si no es un array o si alguno de sus elementos no es un `U8`.
+fn variant_bytes(value: &Value<'_>) -> Option<Vec<u8>> {
+    let inner = match value {
+        Value::Value(boxed) => boxed.as_ref(),
+        other => other,
+    };
+    match inner {
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::U8(byte) => Some(*byte),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+/// Lee `ManufacturerData` (`a{qv}`: company ID → bytes). `None` cuando la
+/// propiedad no está, no es un dict, o el mapa quedaría vacío.
+fn read_manufacturer_data(props: &Properties) -> Option<HashMap<u16, Vec<u8>>> {
+    let Value::Dict(dict) = &**props.get("ManufacturerData")? else {
+        return None;
+    };
+    let mut map = HashMap::new();
+    for (key, value) in dict.iter() {
+        let Value::U16(id) = key else {
+            continue;
+        };
+        if let Some(bytes) = variant_bytes(value) {
+            map.insert(*id, bytes);
+        }
+    }
+    (!map.is_empty()).then_some(map)
+}
+
+/// Lee `ServiceData` (`a{sv}`: UUID del servicio → bytes). `None` cuando la
+/// propiedad no está, no es un dict, o el mapa quedaría vacío.
+fn read_service_data(props: &Properties) -> Option<HashMap<String, Vec<u8>>> {
+    let Value::Dict(dict) = &**props.get("ServiceData")? else {
+        return None;
+    };
+    let mut map = HashMap::new();
+    for (key, value) in dict.iter() {
+        let Ok(uuid) = String::try_from(key) else {
+            continue;
+        };
+        if let Some(bytes) = variant_bytes(value) {
+            map.insert(uuid, bytes);
+        }
+    }
+    (!map.is_empty()).then_some(map)
+}
+
+/// Resuelve el nombre del fabricante desde `manufacturer_data`. Si hay varias
+/// entradas se toma la de **menor** company ID, para que el resultado sea
+/// determinista, y se busca en la tabla de Bluetooth SIG. `None` si no hay
+/// datos o si el id no está en la tabla.
+fn manufacturer_name(manufacturer_data: Option<&HashMap<u16, Vec<u8>>>) -> Option<String> {
+    let min_id = manufacturer_data?.keys().min()?;
+    crate::company_identifiers::company_name(*min_id).map(str::to_string)
+}
+
 /// Arma un [`AdapterInfo`] con las propiedades de `org.bluez.Adapter1`.
 pub(crate) fn adapter_info_from_props(path: String, props: &Properties) -> AdapterInfo {
     AdapterInfo {
@@ -101,6 +172,8 @@ pub(crate) fn device_info_from_props(
     device: &Properties,
     battery: Option<&Properties>,
 ) -> DeviceInfo {
+    let manufacturer_data = read_manufacturer_data(device);
+    let manufacturer = manufacturer_name(manufacturer_data.as_ref());
     DeviceInfo {
         path,
         address: read_or(device, "Address", String::new()),
@@ -120,6 +193,10 @@ pub(crate) fn device_info_from_props(
         adapter: read_object_path(device, "Adapter"),
         services_resolved: read_or(device, "ServicesResolved", false),
         battery: battery_percentage(battery),
+        manufacturer,
+        service_data: read_service_data(device),
+        modalias: read(device, "Modalias"),
+        manufacturer_data,
     }
 }
 

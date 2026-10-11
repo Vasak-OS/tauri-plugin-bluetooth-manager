@@ -55,6 +55,14 @@ export interface DeviceInfo {
    * dato cuando falta, en vez de mostrarlo en cero o vacío.
    */
   battery?: number;
+  // Nombre legible del fabricante, resuelto desde manufacturerData contra la tabla de Bluetooth SIG.
+  manufacturer?: string;
+  // Crudo de ManufacturerData: company ID (clave u16, serializada como string) → bytes.
+  manufacturerData?: Record<string, number[]>;
+  // Crudo de ServiceData: UUID del servicio → bytes.
+  serviceData?: Record<string, number[]>;
+  // De Modalias, p. ej. "bluetooth:v004Cp2000d0A00".
+  modalias?: string;
 }
 
 export interface BluetoothChange {

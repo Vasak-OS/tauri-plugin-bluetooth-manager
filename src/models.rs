@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -61,8 +63,22 @@ pub struct DeviceInfo {
     /// cero, que es «descargado».
     #[serde(skip_serializing_if = "Option::is_none")]
     pub battery: Option<u8>,
-    // Podríamos añadir `manufacturer_data: Option<HashMap<u16, Vec<u8>>>`
-    // y `service_data: Option<HashMap<String, Vec<u8>>>` si es necesario.
+    /// Nombre legible del fabricante, resuelto desde `manufacturer_data` contra
+    /// la tabla de company IDs de Bluetooth SIG. Ausente si el dispositivo no
+    /// publica `ManufacturerData` o si su id no está en la tabla.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manufacturer: Option<String>,
+    /// Crudo de `ManufacturerData` (`a{qv}`): company ID → bytes. Ausente
+    /// cuando el dispositivo no lo publica (nunca un mapa vacío).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manufacturer_data: Option<HashMap<u16, Vec<u8>>>,
+    /// Crudo de `ServiceData` (`a{sv}`): UUID del servicio → bytes. Ausente
+    /// cuando el dispositivo no lo publica (nunca un mapa vacío).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub service_data: Option<HashMap<String, Vec<u8>>>,
+    /// De `Modalias`, p. ej. `"bluetooth:v004Cp2000d0A00"`. Ausente si falta.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modalias: Option<String>,
 }
 
 /// La carga del evento `bluetooth-change`.
@@ -235,6 +251,13 @@ mod tests {
             adapter: "/org/bluez/hci0".into(),
             services_resolved: true,
             battery: Some(80),
+            manufacturer: Some("Apple, Inc.".into()),
+            manufacturer_data: Some(HashMap::from([(0x004C, vec![0x02, 0x15])])),
+            service_data: Some(HashMap::from([(
+                "0000fe0f-0000-1000-8000-00805f9b34fb".into(),
+                vec![0x00],
+            )])),
+            modalias: Some("bluetooth:v004Cp2000d0A00".into()),
         }
     }
 
