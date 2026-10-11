@@ -75,6 +75,77 @@ pub(crate) fn battery_percentage(battery: Option<&Properties>) -> Option<u8> {
     battery.and_then(|props| read::<u8>(props, "Percentage"))
 }
 
+/// Lee un array de bytes (`ay`) desde el valor de una entrada de
+/// `ManufacturerData`/`ServiceData`.
+///
+/// Gotcha de zvariant: en el mapa `a{sv}` de nivel superior (lo que entrega
+/// `GetAll`) el variant ya viene desenvuelto, pero el variant anidado dentro de
+/// un `a{qv}`/`a{sv}` **no**: al iterar el `Dict`, cada valor suele llegar como
+/// `Value::Value(Box<Value>)` que hay que desenvolver una vez antes de llegar
+/// al `Value::Array` de `U8`. Este ayudante tolera las dos formas. Devuelve
+/// `None` si no es un array o si alguno de sus elementos no es un `U8`.
+fn variant_bytes(value: &Value<'_>) -> Option<Vec<u8>> {
+    let inner = match value {
+        Value::Value(boxed) => boxed.as_ref(),
+        other => other,
+    };
+    match inner {
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::U8(byte) => Some(*byte),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+/// Lee `ManufacturerData` (`a{qv}`: company ID → bytes). `None` cuando la
+/// propiedad no está, no es un dict, o el mapa quedaría vacío.
+fn read_manufacturer_data(props: &Properties) -> Option<HashMap<u16, Vec<u8>>> {
+    let Value::Dict(dict) = &**props.get("ManufacturerData")? else {
+        return None;
+    };
+    let mut map = HashMap::new();
+    for (key, value) in dict.iter() {
+        let Value::U16(id) = key else {
+            continue;
+        };
+        if let Some(bytes) = variant_bytes(value) {
+            map.insert(*id, bytes);
+        }
+    }
+    (!map.is_empty()).then_some(map)
+}
+
+/// Lee `ServiceData` (`a{sv}`: UUID del servicio → bytes). `None` cuando la
+/// propiedad no está, no es un dict, o el mapa quedaría vacío.
+fn read_service_data(props: &Properties) -> Option<HashMap<String, Vec<u8>>> {
+    let Value::Dict(dict) = &**props.get("ServiceData")? else {
+        return None;
+    };
+    let mut map = HashMap::new();
+    for (key, value) in dict.iter() {
+        let Ok(uuid) = String::try_from(key) else {
+            continue;
+        };
+        if let Some(bytes) = variant_bytes(value) {
+            map.insert(uuid, bytes);
+        }
+    }
+    (!map.is_empty()).then_some(map)
+}
+
+/// Resuelve el nombre del fabricante desde `manufacturer_data`. Si hay varias
+/// entradas se toma la de **menor** company ID, para que el resultado sea
+/// determinista, y se busca en la tabla de Bluetooth SIG. `None` si no hay
+/// datos o si el id no está en la tabla.
+fn manufacturer_name(manufacturer_data: Option<&HashMap<u16, Vec<u8>>>) -> Option<String> {
+    let min_id = manufacturer_data?.keys().min()?;
+    crate::company_identifiers::company_name(*min_id).map(str::to_string)
+}
+
 /// Arma un [`AdapterInfo`] con las propiedades de `org.bluez.Adapter1`.
 pub(crate) fn adapter_info_from_props(path: String, props: &Properties) -> AdapterInfo {
     AdapterInfo {
@@ -101,6 +172,8 @@ pub(crate) fn device_info_from_props(
     device: &Properties,
     battery: Option<&Properties>,
 ) -> DeviceInfo {
+    let manufacturer_data = read_manufacturer_data(device);
+    let manufacturer = manufacturer_name(manufacturer_data.as_ref());
     DeviceInfo {
         path,
         address: read_or(device, "Address", String::new()),
@@ -120,6 +193,10 @@ pub(crate) fn device_info_from_props(
         adapter: read_object_path(device, "Adapter"),
         services_resolved: read_or(device, "ServicesResolved", false),
         battery: battery_percentage(battery),
+        manufacturer,
+        service_data: read_service_data(device),
+        modalias: read(device, "Modalias"),
+        manufacturer_data,
     }
 }
 
@@ -138,6 +215,8 @@ pub(crate) fn device_info_from_interfaces(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use zbus::zvariant::{Dict, Signature};
 
     fn owned(value: Value<'_>) -> OwnedValue {
         OwnedValue::try_from(value).expect("un valor sin descriptores siempre se puede poseer")
@@ -352,5 +431,315 @@ mod tests {
         let adapter = props(vec![("Modalias", Value::from("usb:v1D6Bp0246d0540"))]);
         let info = adapter_info_from_props("/org/bluez/hci0".to_string(), &adapter);
         assert_eq!(info.modalias.as_deref(), Some("usb:v1D6Bp0246d0540"));
+    }
+
+    // --- fabricante y datos crudos (ManufacturerData / ServiceData) ---------
+
+    /// Un company ID que no está en la tabla de Bluetooth SIG. El id más alto
+    /// de la tabla generada es `0x1130`, así que `0xF000` no está y no se
+    /// vuelve conocido cuando se regenere la tabla.
+    const UNKNOWN_COMPANY_ID: u16 = 0xF000;
+
+    /// Arma el valor de `ManufacturerData` (`a{qv}`) tal como lo entrega BlueZ:
+    /// el byte-array de cada entrada va envuelto en un variant anidado
+    /// (`Value::Value`), que es el gotcha de zvariant 4 que `variant_bytes`
+    /// desenvuelve. `value_override` deja meter un valor que no es `ay` para
+    /// probar el descarte.
+    fn manufacturer_data(entries: Vec<(u16, Value<'static>)>) -> Value<'static> {
+        let mut dict = Dict::new(
+            Signature::try_from("q").unwrap(),
+            Signature::try_from("v").unwrap(),
+        );
+        for (id, value) in entries {
+            dict.append(Value::U16(id), Value::Value(Box::new(value)))
+                .unwrap();
+        }
+        Value::Dict(dict)
+    }
+
+    /// Un `ay` (array de bytes) como el que va dentro de cada entrada.
+    fn bytes(raw: Vec<u8>) -> Value<'static> {
+        Value::from(raw)
+    }
+
+    /// Arma el valor de `ServiceData` (`a{sv}`: UUID → bytes), con el byte-array
+    /// envuelto igual que arriba.
+    fn service_data(entries: Vec<(&str, Vec<u8>)>) -> Value<'static> {
+        let mut dict = Dict::new(
+            Signature::try_from("s").unwrap(),
+            Signature::try_from("v").unwrap(),
+        );
+        for (uuid, raw) in entries {
+            dict.append(
+                Value::from(uuid.to_string()),
+                Value::Value(Box::new(Value::from(raw))),
+            )
+            .unwrap();
+        }
+        Value::Dict(dict)
+    }
+
+    // --- variant_bytes: el gotcha de zvariant 4 ----------------------------
+
+    #[test]
+    fn variant_bytes_desenvuelve_el_variant_anidado() {
+        let wrapped = Value::Value(Box::new(bytes(vec![0x02, 0x15, 0xFF])));
+        assert_eq!(variant_bytes(&wrapped), Some(vec![0x02, 0x15, 0xFF]));
+    }
+
+    #[test]
+    fn variant_bytes_tolera_el_array_sin_envolver() {
+        // Por si alguna ruta entregara el `ay` ya desenvuelto.
+        assert_eq!(
+            variant_bytes(&bytes(vec![0x01, 0x02])),
+            Some(vec![0x01, 0x02])
+        );
+    }
+
+    #[test]
+    fn variant_bytes_rechaza_el_doble_envuelto() {
+        let doubly = Value::Value(Box::new(Value::Value(Box::new(bytes(vec![0x01])))));
+        assert_eq!(variant_bytes(&doubly), None);
+    }
+
+    #[test]
+    fn variant_bytes_rechaza_lo_que_no_es_un_array() {
+        assert_eq!(variant_bytes(&Value::U16(5)), None);
+        let wrapped_scalar = Value::Value(Box::new(Value::U16(5)));
+        assert_eq!(variant_bytes(&wrapped_scalar), None);
+    }
+
+    #[test]
+    fn variant_bytes_rechaza_un_array_que_no_es_de_u8() {
+        let not_u8 = Value::Value(Box::new(Value::from(vec![1u32, 2u32])));
+        assert_eq!(variant_bytes(&not_u8), None);
+    }
+
+    // --- manufacturer_data y el nombre resuelto ----------------------------
+
+    #[test]
+    fn el_fabricante_conocido_se_resuelve_por_su_id() {
+        for (id, name) in [(0x004C_u16, "Apple, Inc."), (0x0006, "Microsoft")] {
+            let mut device = device_props();
+            device.insert(
+                "ManufacturerData".to_string(),
+                owned(manufacturer_data(vec![(id, bytes(vec![0x02, 0x15]))])),
+            );
+            let info = device_info_from_props(path(), &device, None);
+            assert_eq!(info.manufacturer.as_deref(), Some(name), "id {id:#06x}");
+            assert_eq!(
+                info.manufacturer_data,
+                Some(HashMap::from([(id, vec![0x02, 0x15])])),
+                "el crudo de id {id:#06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn con_varios_fabricantes_gana_el_id_menor() {
+        // Dos entradas: Microsoft (0x0006) y Apple (0x004C). El menor manda,
+        // para que el resultado no dependa del orden del mapa.
+        let mut device = device_props();
+        device.insert(
+            "ManufacturerData".to_string(),
+            owned(manufacturer_data(vec![
+                (0x004C, bytes(vec![0x02, 0x15])),
+                (0x0006, bytes(vec![0x01])),
+            ])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(info.manufacturer.as_deref(), Some("Microsoft"));
+        assert_eq!(
+            info.manufacturer_data,
+            Some(HashMap::from([
+                (0x004C, vec![0x02, 0x15]),
+                (0x0006, vec![0x01]),
+            ]))
+        );
+    }
+
+    #[test]
+    fn un_id_desconocido_no_da_nombre_pero_si_crudo() {
+        let mut device = device_props();
+        device.insert(
+            "ManufacturerData".to_string(),
+            owned(manufacturer_data(vec![(
+                UNKNOWN_COMPANY_ID,
+                bytes(vec![0xAB, 0xCD]),
+            )])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(info.manufacturer, None);
+        assert_eq!(
+            info.manufacturer_data,
+            Some(HashMap::from([(UNKNOWN_COMPANY_ID, vec![0xAB, 0xCD])]))
+        );
+    }
+
+    #[test]
+    fn manufacturer_data_vacio_queda_ausente_y_no_en_mapa_vacio() {
+        let mut device = device_props();
+        device.insert(
+            "ManufacturerData".to_string(),
+            owned(manufacturer_data(vec![])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(info.manufacturer_data, None);
+        assert_eq!(info.manufacturer, None);
+    }
+
+    #[test]
+    fn sin_manufacturer_data_ambos_quedan_ausentes() {
+        let info = device_info_from_props(path(), &device_props(), None);
+        assert_eq!(info.manufacturer_data, None);
+        assert_eq!(info.manufacturer, None);
+    }
+
+    #[test]
+    fn una_entrada_cuyos_bytes_no_son_u8_se_descarta() {
+        // Única entrada con un valor que no es `ay`: el mapa queda vacío y el
+        // campo ausente, no un mapa vacío.
+        let mut device = device_props();
+        device.insert(
+            "ManufacturerData".to_string(),
+            owned(manufacturer_data(vec![(
+                0x004C,
+                Value::from(vec![1u32, 2u32]),
+            )])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(info.manufacturer_data, None);
+        assert_eq!(info.manufacturer, None);
+    }
+
+    #[test]
+    fn la_entrada_rota_se_cae_pero_la_sana_queda() {
+        // Dos entradas, una con bytes válidos y otra con un valor que no es
+        // `ay`: sobrevive sólo la sana.
+        let mut device = device_props();
+        device.insert(
+            "ManufacturerData".to_string(),
+            owned(manufacturer_data(vec![
+                (0x0006, bytes(vec![0x09])),
+                (0x004C, Value::from("no soy bytes")),
+            ])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(
+            info.manufacturer_data,
+            Some(HashMap::from([(0x0006, vec![0x09])]))
+        );
+        assert_eq!(info.manufacturer.as_deref(), Some("Microsoft"));
+    }
+
+    // --- service_data ------------------------------------------------------
+
+    #[test]
+    fn service_data_con_dos_entradas_sale_crudo() {
+        let mut device = device_props();
+        device.insert(
+            "ServiceData".to_string(),
+            owned(service_data(vec![
+                ("0000fe0f-0000-1000-8000-00805f9b34fb", vec![0x00, 0x01]),
+                ("0000feaa-0000-1000-8000-00805f9b34fb", vec![0x10]),
+            ])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(
+            info.service_data,
+            Some(HashMap::from([
+                (
+                    "0000fe0f-0000-1000-8000-00805f9b34fb".to_string(),
+                    vec![0x00, 0x01]
+                ),
+                (
+                    "0000feaa-0000-1000-8000-00805f9b34fb".to_string(),
+                    vec![0x10]
+                ),
+            ]))
+        );
+    }
+
+    #[test]
+    fn service_data_vacio_queda_ausente() {
+        let mut device = device_props();
+        device.insert(
+            "ServiceData".to_string(),
+            owned(Value::Dict(Dict::new(
+                Signature::try_from("s").unwrap(),
+                Signature::try_from("v").unwrap(),
+            ))),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(info.service_data, None);
+    }
+
+    #[test]
+    fn sin_service_data_queda_ausente() {
+        let info = device_info_from_props(path(), &device_props(), None);
+        assert_eq!(info.service_data, None);
+    }
+
+    // --- modalias del dispositivo ------------------------------------------
+
+    #[test]
+    fn el_dispositivo_lee_modalias_cuando_esta() {
+        let mut device = device_props();
+        device.insert(
+            "Modalias".to_string(),
+            owned(Value::from("bluetooth:v004Cp2000d0A00")),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        assert_eq!(info.modalias.as_deref(), Some("bluetooth:v004Cp2000d0A00"));
+    }
+
+    #[test]
+    fn el_dispositivo_sin_modalias_queda_ausente() {
+        let info = device_info_from_props(path(), &device_props(), None);
+        assert_eq!(info.modalias, None);
+    }
+
+    // --- serialización JSON de los campos nuevos ---------------------------
+
+    #[test]
+    fn el_json_de_manufacturer_data_lleva_claves_string_y_arrays_de_numeros() {
+        // guest-js promete `Record<string, number[]>`: la clave u16 del mapa
+        // sale como texto (0x4C → "76") y los bytes como un array de números.
+        let mut device = device_props();
+        device.insert(
+            "ManufacturerData".to_string(),
+            owned(manufacturer_data(vec![(0x004C, bytes(vec![0x02, 0x15]))])),
+        );
+        device.insert(
+            "ServiceData".to_string(),
+            owned(service_data(vec![(
+                "0000fe0f-0000-1000-8000-00805f9b34fb",
+                vec![0x00],
+            )])),
+        );
+        let info = device_info_from_props(path(), &device, None);
+        let json = serde_json::to_value(info).unwrap();
+        assert_eq!(
+            json["manufacturerData"],
+            serde_json::json!({ "76": [2, 21] }),
+            "{json}"
+        );
+        assert_eq!(json["manufacturer"], serde_json::json!("Apple, Inc."));
+        assert_eq!(
+            json["serviceData"],
+            serde_json::json!({ "0000fe0f-0000-1000-8000-00805f9b34fb": [0] }),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn sin_los_campos_nuevos_el_json_no_trae_esas_claves() {
+        // skip_serializing_if: ausente es ausente, no `null` ni mapa vacío.
+        let info = device_info_from_props(path(), &device_props(), None);
+        let json = serde_json::to_value(info).unwrap();
+        assert!(json.get("manufacturer").is_none(), "{json}");
+        assert!(json.get("manufacturerData").is_none(), "{json}");
+        assert!(json.get("serviceData").is_none(), "{json}");
+        assert!(json.get("modalias").is_none(), "{json}");
     }
 }
