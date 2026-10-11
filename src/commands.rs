@@ -69,10 +69,18 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
 }
 
 #[tauri::command]
-pub async fn start_scan(adapter_path: String) -> Result<()> {
+pub async fn start_scan(adapter_path: String, state: State<'_, BluetoothManager>) -> Result<()> {
     info!("Starting scan on adapter: {}", adapter_path);
 
-    let conn = Connection::system().await?;
+    // La conexión persistente del plugin, no una nueva por llamada. En BlueZ el
+    // descubrimiento está atado al cliente D-Bus que lo pide: cuando ese cliente
+    // deja el bus, BlueZ lo detiene por él. Una `Connection::system()` propia de
+    // este comando se cierra al retornar —`zbus` suelta el socket con la
+    // `Connection`—, así que el escaneo arrancaba y moría al instante, y la
+    // aplicación no veía nada que la terminal (que mantiene una conexión abierta)
+    // sí encontraba. Reusando la del estado, el descubrimiento sigue vivo tanto
+    // tiempo como el proceso.
+    let conn = state.conn.clone();
     let proxy = Proxy::new(&conn, "org.bluez", adapter_path.as_str(), ADAPTER_INTERFACE).await?;
 
     match proxy.call_method("StartDiscovery", &()).await {
@@ -95,10 +103,15 @@ pub async fn start_scan(adapter_path: String) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn stop_scan(adapter_path: String) -> Result<()> {
+pub async fn stop_scan(adapter_path: String, state: State<'_, BluetoothManager>) -> Result<()> {
     info!("Stopping scan on adapter: {}", adapter_path);
 
-    let conn = Connection::system().await?;
+    // La misma conexión que `start_scan`. BlueZ cuenta el descubrimiento por
+    // cliente: `StopDiscovery` sólo detiene el que abrió ese mismo cliente, así
+    // que tiene que ser la conexión del estado y no una nueva, o la llamada
+    // fallaría con «no hay descubrimiento de este cliente» y el escaneo quedaría
+    // corriendo.
+    let conn = state.conn.clone();
     let proxy = Proxy::new(&conn, "org.bluez", adapter_path.as_str(), ADAPTER_INTERFACE).await?;
 
     match proxy.call_method("StopDiscovery", &()).await {
