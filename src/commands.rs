@@ -7,7 +7,7 @@ use crate::properties::{
 use crate::Result;
 use std::collections::HashMap;
 use tauri::State;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use zbus::{
     zvariant::{OwnedObjectPath, Value as ZbusValue},
     Connection, Proxy,
@@ -68,6 +68,18 @@ pub async fn get_adapter_state(adapter_path: String) -> Result<AdapterInfo> {
     Ok(adapter_info_from_props(adapter_path, &props))
 }
 
+/// Filtro de descubrimiento que fijamos antes de escanear, con `SetDiscoveryFilter`.
+///
+/// `Transport=auto` hace que el barrido cubra tanto BLE como BR/EDR, y al fijarlo
+/// reemplazamos cualquier filtro más restrictivo que haya dejado otro cliente:
+/// sin esto, un filtro ajeno —o un default sesgado a BR/EDR— puede dejar afuera a
+/// los periféricos BLE, que son la mayoría.
+fn discovery_filter() -> HashMap<&'static str, ZbusValue<'static>> {
+    let mut filter = HashMap::new();
+    filter.insert("Transport", ZbusValue::from("auto"));
+    filter
+}
+
 #[tauri::command]
 pub async fn start_scan(adapter_path: String, state: State<'_, BluetoothManager>) -> Result<()> {
     info!("Starting scan on adapter: {}", adapter_path);
@@ -82,6 +94,20 @@ pub async fn start_scan(adapter_path: String, state: State<'_, BluetoothManager>
     // tiempo como el proceso.
     let conn = state.conn.clone();
     let proxy = Proxy::new(&conn, "org.bluez", adapter_path.as_str(), ADAPTER_INTERFACE).await?;
+
+    // Fijar el filtro de descubrimiento antes de arrancar, como hacen
+    // bluetoothctl y blueman. No es fatal si falla: el adaptador puede no
+    // aceptar el filtro, y en ese caso preferimos escanear con el default antes
+    // que abortar el escaneo.
+    if let Err(e) = proxy
+        .call_method("SetDiscoveryFilter", &(discovery_filter(),))
+        .await
+    {
+        warn!(
+            "SetDiscoveryFilter falló, sigo con el descubrimiento por defecto: {}",
+            e
+        );
+    }
 
     match proxy.call_method("StartDiscovery", &()).await {
         Ok(_) => {
