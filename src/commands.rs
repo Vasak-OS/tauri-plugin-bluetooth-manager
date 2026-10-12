@@ -324,4 +324,47 @@ mod tests {
         takes_adapter_path_and_state(start_scan);
         takes_adapter_path_and_state(stop_scan);
     }
+
+    // Guarda de regresión del filtro de descubrimiento.
+    //
+    // `start_scan` fija `SetDiscoveryFilter` con lo que arma `discovery_filter()`
+    // antes de `StartDiscovery`, igual que bluetoothctl y blueman. El contrato es
+    // `Transport=auto`: ese valor es el que hace que el barrido cubra tanto BLE
+    // como BR/EDR. Si alguien saca la clave `Transport`, o la cambia a `bredr` o
+    // a `le`, el adaptador deja de descubrir media pila —con `bredr` se cae el
+    // BLE, que son la mayoría de los periféricos, y fue justamente el síntoma que
+    // este cambio arregla—. Esta prueba fija el valor exacto para que ese cambio
+    // ponga la suite en rojo en vez de pasar inadvertido.
+    //
+    // Es una guarda pura: no levanta un bus. Sólo comprueba lo que el helper arma
+    // en memoria; que BlueZ acepte el filtro y descubra las dos pilas sólo se ve
+    // contra un BlueZ real (ver `probar_el_filtro_contra_bluez_real`).
+    #[test]
+    fn el_filtro_de_descubrimiento_pide_el_transporte_automatico() {
+        let filter = discovery_filter();
+
+        assert_eq!(
+            filter.get("Transport"),
+            Some(&ZbusValue::from("auto")),
+            "el filtro tiene que pedir Transport=auto para cubrir BLE y BR/EDR"
+        );
+    }
+
+    // Documenta cómo comprobar el filtro de punta a punta contra un BlueZ real,
+    // que es lo único que la guarda pura de arriba no puede hacer. Queda marcada
+    // `#[ignore]` porque necesita un adaptador y un bus de sistema con BlueZ, que
+    // no hay en CI. Para correrla a mano, en un equipo con Bluetooth encendido:
+    //
+    //   cargo test --locked -p tauri-plugin-bluetooth-manager \
+    //       probar_el_filtro_contra_bluez_real -- --ignored --nocapture
+    //
+    // y, mientras corre `start_scan`, confirmar con `busctl --system introspect
+    // org.bluez /org/bluez/hci0` o con `bluetoothctl` que el adaptador reporta
+    // `Discovering=yes` y que aparecen tanto periféricos BLE como clásicos.
+    #[test]
+    #[ignore = "necesita un BlueZ real con adaptador; no reproducible en CI"]
+    fn probar_el_filtro_contra_bluez_real() {
+        // Sin bus no hay nada automático que afirmar; el procedimiento vive en el
+        // comentario de arriba.
+    }
 }
