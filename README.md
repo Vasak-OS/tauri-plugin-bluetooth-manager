@@ -1,618 +1,382 @@
-# Tauri Plugin — Bluetooth Manager
+# Tauri plugin bluetooth manager
 
-**`@vasakgroup/plugin-bluetooth-manager`** is a [Tauri](https://v2.tauri.app) plugin for Linux that provides full Bluetooth adapter and device management via **BlueZ** (the official Linux Bluetooth stack) over **D-Bus**.
-
-> Built with `zbus` 4 and `zvariant` 4. Requires Linux with BlueZ >= 5.x.
+Plugin for tauri to manager bluetooth(Only for Linux {VasakOS})
 
 ---
 
-## Table of Contents
+## Tecnología
 
-- [Installation](#installation)
-- [Architecture](#architecture)
-- [TypeScript API](#typescript-api)
-  - [Types](#types)
-  - [Commands](#commands)
-  - [Helper Functions](#helper-functions)
-  - [Events](#events)
-- [Rust API](#rust-api)
-  - [Commands](#rust-commands)
-  - [Structures](#rust-structures)
-  - [Error Types](#error-types)
-- [Permissions](#permissions)
-- [Examples](#examples)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
+Uso: generate-readme-badges.sh <tipo>
+
+Tipos válidos:
+  tauri-vue       Apps Tauri + Vue 3 (Rust, Tauri, Vue 3, TypeScript)
+  rust-service    Servicios Rust systemd/D-Bus (Rust, systemd, D-Bus)
+  cpp-plugin      Plugins C++ Wayfire (C++, Meson, Wayfire)
+  meson-c         Módulos C WirePlumber (C, Meson, WirePlumber)
+  meson-cpp       Plugins C++ genéricos Meson (C++, Meson)
+
+Ejemplos:
+  ./generate-readme-badges.sh tauri-vue
+  ./generate-readme-badges.sh rust-service > tech-badges.md
+
+## Estado
+
+[![CI](https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager/actions/workflows/ci.yml)
+[![Versión](https://img.shields.io/github/v/release/Vasak-OS/tauri-plugin-bluetooth-manager?style=flat&label=Versi%C3%B3n)](https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager/releases)
+[![Licencia](https://img.shields.io/github/license/Vasak-OS/tauri-plugin-bluetooth-manager?style=flat)](LICENSE)
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=Vasak-OS_tauri-plugin-bluetooth-manager&metric=coverage&style=flat)](https://sonarcloud.io/summary/new_code?id=Vasak-OS_tauri-plugin-bluetooth-manager)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=Vasak-OS_tauri-plugin-bluetooth-manager&metric=alert_status&style=flat)](https://sonarcloud.io/summary/new_code?id=Vasak-OS_tauri-plugin-bluetooth-manager)
+[![Tamaño repo](https://img.shields.io/github/repo-size/Vasak-OS/tauri-plugin-bluetooth-manager?style=flat)](https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager)
 
 ---
 
-## Installation
+## Descripción
 
-### 1. Add the Rust crate to your Tauri app
+Plugin for tauri to manager bluetooth(Only for Linux {VasakOS})
 
-```toml
-# src-tauri/Cargo.toml
-[dependencies]
-tauri-plugin-bluetooth-manager = "2"
+**Para el usuario:** Plugin for tauri to manager bluetooth(Only for Linux {VasakOS})
+
+**Integración VasakOS:** Integra con el ecosistema VasakOS vía D-Bus y configuración compartida.
+
+---
+
+## Arquitectura (diagramas)
+
+> Copia y pega la plantilla que necesites, descomenta y adapta.
+
+### Flujo de datos
+
+```mermaid
+<!--
+graph TD
+    A[Entrada: Teclado / Ratón / D-Bus / Sistema] --> B[Procesamiento: Core Rust + Tauri Commands]
+    B --> C[Salida: UI actualizada / Acciones del sistema]
+    style A fill:#e1f5fe
+    style C fill:#e8f5e9
+-->
 ```
 
-### 2. Register the plugin
+### Componentes internos
 
-```rust
-// src-tauri/src/lib.rs
-fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_bluetooth_manager::init())
-        .run(tauri::generate_context!())
-        .expect("error running tauri app");
-}
+```mermaid
+<!--
+flowchart LR
+    subgraph App[Tauri plugin bluetooth manager]
+        UI[Frontend Vue 3 + vue-libvasak]
+        Core[Core Rust: lógica principal]
+        IPC[Tauri Commands / Eventos]
+        System[Systemd / D-Bus / PipeWire / Wayland]
+    end
+    UI --> IPC
+    IPC --> Core
+    Core --> DBus[(D-Bus / zbus)]
+    Core --> System
+    style UI fill:#f3e5f5
+    style Core fill:#e3f2fd
+    style DBus fill:#fff3e0
+    style System fill:#fce4ec
+-->
 ```
 
-### 3. Install the JS/TS package
+### Integración en el sistema VasakOS
+
+```mermaid
+<!--
+C4Context
+    title Tauri plugin bluetooth manager en VasakOS
+    Person(usuario, "Usuario", "Persona que usa el sistema")
+    System_Boundary(c1, "VasakOS") {
+        System(app, "Tauri plugin bluetooth manager", "Plugin for tauri to manager bluetooth(Only for Linux {VasakOS})")
+        System_Ext(settings, "vasak-settings", "Configuración central")
+        System_Ext(keyring, "vasak-keyring", "Secrets y claves")
+        System_Ext(accounts, "vasak-accounts", "Cuentas e identidad")
+        System_Ext(permissions, "vasak-permissions", "Permisos y portales")
+    }
+    System_Ext(systemd, "systemd", "Gestión de servicios")
+    System_Ext(dbus, "D-Bus", "Bus de mensajes del sistema")
+    System_Ext(wayland, "Wayland / Wayfire", "Compositor")
+    System_Ext(pipewire, "PipeWire", "Multimedia")
+    Rel(usuario, app, "Usa")
+    Rel(app, settings, "Lee/escribe config")
+    Rel(app, keyring, "Guarda/lee secrets")
+    Rel(app, accounts, "Identidad de cuenta")
+    Rel(app, permissions, "Solicita permisos")
+    Rel(app, systemd, "Activación / sockets")
+    Rel(app, dbus, "Expone / consume interfaces")
+    Rel(app, wayland, "Superficies / protocolos")
+    Rel(app, pipewire, "Streams de audio/video")
+-->
+```
+
+---
+
+## Instalación
+
+### Arch Linux (repo oficial)
 
 ```bash
-npm install @vasakgroup/plugin-bluetooth-manager
-# or
-bun add @vasakgroup/plugin-bluetooth-manager
+pacman -S vasak-tauri-plugin-bluetooth-manager
 ```
 
-### 4. Configure permissions
-
-```jsonc
-// src-tauri/capabilities/default.json
-{
-  "identifier": "default",
-  "windows": ["main"],
-  "permissions": [
-    "bluetooth-manager:default"
-  ]
-}
-```
-
-The `default` permission grants access to all Bluetooth commands. For fine-grained control, see [Permissions](#permissions).
-
----
-
-## Architecture
-
-The plugin communicates with **BlueZ** (`org.bluez`) through the **D-Bus system bus**. BlueZ is the standard Linux Bluetooth stack and must be running on the system.
-
-```
-┌──────────────────────────────────────────────────┐
-│                Tauri App (Frontend)               │
-│     TypeScript API ←→ invoke("plugin:...")        │
-└──────────────────────┬───────────────────────────┘
-                       │
-┌──────────────────────▼───────────────────────────┐
-│           Tauri Plugin (Rust Backend)             │
-│                                                   │
-│  ┌─────────────┐  ┌──────────────────────────┐   │
-│  │  commands.rs │  │      desktop.rs           │   │
-│  │  (Commands)  │  │  (Signal Listener)        │   │
-│  └──────┬──────┘  └──────────┬───────────────┘   │
-│         │                    │                     │
-│  ┌──────▼────────────────────▼───────────────┐   │
-│  │          zbus 4 / zvariant 4              │   │
-│  │        (D-Bus client library)             │   │
-│  └──────────────────┬────────────────────────┘   │
-└─────────────────────┼────────────────────────────┘
-                      │ D-Bus System Bus
-┌─────────────────────▼────────────────────────────┐
-│                   BlueZ                           │
-│              org.bluez (DBus service)             │
-│                                                   │
-│  ┌──────────────┐  ┌────────────────────────┐    │
-│  │  Adapter1    │  │    Device1             │    │
-│  │  (hci0)      │  │    (peripheral)        │    │
-│  └──────────────┘  └────────────────────────┘    │
-└──────────────────────────────────────────────────┘
-```
-
-### D-Bus Interfaces Used
-
-| Interface | Purpose |
-|-----------|---------|
-| `org.freedesktop.DBus.ObjectManager` | Enumerate adapters and devices (`GetManagedObjects`) |
-| `org.freedesktop.DBus.Properties` | Read/write adapter and device properties |
-| `org.bluez.Adapter1` | Discover, power, configure adapters |
-| `org.bluez.Device1` | Connect, disconnect, pair devices |
-| `org.bluez.Battery1` | Battery percentage of the devices that publish it (optional) |
-
-### Key Implementation Details
-
-- **Property extraction**: BlueZ returns all properties wrapped in D-Bus variants. `src/properties.rs` unwraps them with `TryFrom<&Value>` and builds `AdapterInfo` / `DeviceInfo` in one place, shared by the commands and the signal listener, so it can be tested without a bus.
-- **Battery**: `org.bluez.Battery1` is optional. `getDeviceInfo` reads it with a second `GetAll` on the same object and swallows the error BlueZ returns when the interface is missing; the `battery` field is then absent, which means "unknown" and is not the same as `0`. Battery changes arrive as `device-property-changed`.
-- **Real-time updates**: The plugin subscribes to BlueZ signals (`InterfacesAdded`, `InterfacesRemoved`, `PropertiesChanged`) via the D-Bus system bus and emits Tauri events to the frontend.
-- **Throttling**: Device property changes are throttled to 500ms to avoid flooding the frontend with rapid updates (e.g., RSSI fluctuations during scanning).
-- **Error resilience**: D-Bus errors like `InProgress`, `AlreadyConnected`, `NotConnected`, etc. are handled gracefully instead of propagating as hard errors.
-
----
-
-## TypeScript API
-
-### Types
-
-```typescript
-/** Information about a Bluetooth adapter (dongle, built-in) */
-interface AdapterInfo {
-  path: string;               // D-Bus object path (e.g. "/org/bluez/hci0")
-  address: string;            // MAC address (e.g. "00:11:22:33:44:55")
-  name: string;               // Adapter name
-  alias: string;              // User-configured alias
-  class: number;              // Class of device (Bluetooth class)
-  powered: boolean;           // Adapter is powered on
-  discoverable: boolean;      // Adapter is discoverable by other devices
-  discoverableTimeout: number; // Discoverable timeout in seconds
-  pairable: boolean;          // Adapter is pairable
-  pairableTimeout: number;    // Pairable timeout in seconds
-  discovering: boolean;       // Actively scanning for devices
-  uuids: string[];            // Supported UUIDs (GATT services)
-  modalias?: string;          // Modalias (e.g. "usb:v1D6Bp0246d0540")
-}
-
-/** Information about a Bluetooth device (peripheral) */
-interface DeviceInfo {
-  path: string;               // D-Bus object path
-  address: string;            // MAC address
-  name?: string;              // Device name (may be null during discovery)
-  alias?: string;             // User-configured alias
-  class?: number;             // Class of device
-  appearance?: number;        // Appearance (Bluetooth LE)
-  icon?: string;              // Icon identifier
-  paired: boolean;            // Device is paired
-  trusted: boolean;           // Device is trusted (auto-connect)
-  blocked: boolean;           // Device is blocked
-  legacyPairing: boolean;     // Uses legacy pairing (SSP)
-  rssi?: number;              // Signal strength (dBm)
-  txPower?: number;           // Transmit power (dBm)
-  connected: boolean;         // Device is connected
-  uuids: string[];            // Supported UUIDs
-  adapter: string;            // D-Bus path of parent adapter
-  servicesResolved: boolean;  // All services are resolved
-  battery?: number;           // Battery percentage (0-100); absent when the device does not publish org.bluez.Battery1 (absent != 0)
-}
-
-/** Event payload for real-time Bluetooth changes */
-interface BluetoothChange {
-  changeType: string;         // Type of change (see Events)
-  change_type: string;        // Deprecated: same value as changeType, removed in the next major
-  data: any;                  // AdapterInfo, DeviceInfo, or path
-}
-```
-
-### Commands
-
-All commands are async and return Promises. Errors are thrown as exceptions.
-
-| Function | Returns | Description |
-|----------|---------|-------------|
-| `listAdapters()` | `AdapterInfo[]` | List all Bluetooth adapters |
-| `setAdapterPowered(path, powered)` | `void` | Turn adapter on/off |
-| `getAdapterState(path)` | `AdapterInfo` | Get adapter current state |
-| `listDevices(adapterPath)` | `DeviceInfo[]` | List all devices for an adapter |
-| `getDeviceInfo(devicePath)` | `DeviceInfo` | Get detailed device info |
-| `listPairedDevices(adapterPath)` | `DeviceInfo[]` | List only paired devices |
-| `startScan(adapterPath)` | `void` | Start device discovery (scan) |
-| `stopScan(adapterPath)` | `void` | Stop device discovery |
-| `connectDevice(devicePath)` | `void` | Connect to a device |
-| `disconnectDevice(devicePath)` | `void` | Disconnect from a device |
-| `isBluetoothPluginInitialized()` | `boolean` | Check if plugin initialized correctly |
-
-```typescript
-import {
-  listAdapters,
-  setAdapterPowered,
-  getAdapterState,
-  listDevices,
-  getDeviceInfo,
-  listPairedDevices,
-  startScan,
-  stopScan,
-  connectDevice,
-  disconnectDevice,
-  isBluetoothPluginInitialized,
-} from '@vasakgroup/plugin-bluetooth-manager';
-
-// List adapters
-const adapters = await listAdapters();
-console.log(adapters[0].address); // "00:11:22:33:44:55"
-
-// Power on
-await setAdapterPowered('/org/bluez/hci0', true);
-
-// Disconnect a device
-await disconnectDevice('/org/bluez/hci0/dev_XX_XX_XX_XX_XX_XX');
-```
-
-### Helper Functions
-
-The package includes ergonomic wrappers:
-
-```typescript
-import {
-  isBluetoothAvailable,
-  getDefaultAdapter,
-  isBluetoothEnabled,
-  toggleBluetooth,
-  getConnectedDevicesCount,
-  getConnectedDevices,
-  getAvailableDevices,
-  findDeviceByAddress,
-  scanForDevices,
-} from '@vasakgroup/plugin-bluetooth-manager';
-
-// Quick check
-if (await isBluetoothAvailable()) {
-  const adapter = await getDefaultAdapter();
-  const enabled = await isBluetoothEnabled();
-
-  // Toggle power
-  const newState = await toggleBluetooth();
-
-  // Scan for 10 seconds
-  const devices = await scanForDevices(adapter!.path, 10000);
-
-  // Find a specific device
-  const device = await findDeviceByAddress(adapter!.path, 'XX:XX:XX:XX:XX:XX');
-}
-
-// Get connected devices
-const connected = await getConnectedDevices('/org/bluez/hci0');
-console.log(`${connected.length} device(s) connected`);
-```
-
-### Events
-
-The plugin emits real-time events via Tauri's event system. Listen with `@tauri-apps/api/event`:
-
-```typescript
-import { listen } from '@tauri-apps/api/event';
-import { BluetoothChangeType } from '@vasakgroup/plugin-bluetooth-manager';
-
-await listen('bluetooth-change', (event) => {
-  const { changeType, data } = event.payload;
-
-  switch (changeType) {
-    case BluetoothChangeType.ADAPTER_ADDED:
-      console.log('New adapter:', data);
-      break;
-    case BluetoothChangeType.ADAPTER_REMOVED:
-      console.log('Adapter removed:', data.path);
-      break;
-    case BluetoothChangeType.ADAPTER_PROPERTY_CHANGED:
-      console.log('Adapter property changed:', data);
-      break;
-    case BluetoothChangeType.DEVICE_ADDED:
-      console.log('New device discovered:', data);
-      break;
-    case BluetoothChangeType.DEVICE_REMOVED:
-      console.log('Device removed:', data.path);
-      break;
-    case BluetoothChangeType.DEVICE_CONNECTED:
-      console.log('Device connected:', data);
-      break;
-    case BluetoothChangeType.DEVICE_DISCONNECTED:
-      console.log('Device disconnected:', data);
-      break;
-    case BluetoothChangeType.DEVICE_PROPERTY_CHANGED:
-      console.log('Device property changed:', data);
-      break;
-    case BluetoothChangeType.ERROR:
-      console.error('Bluetooth error:', data.message);
-      break;
-    case BluetoothChangeType.DBUS_ERROR:
-      console.error('D-Bus error:', data.message);
-      break;
-  }
-});
-```
-
-#### Event Types
-
-| `changeType` | `data` shape | Triggered when |
-|---|---|---|
-| `adapter-added` | `AdapterInfo` | New Bluetooth adapter appears |
-| `adapter-removed` | `{ path: string }` | Adapter is removed |
-| `adapter-property-changed` | `AdapterInfo` | Adapter property changes (power, name, etc.) |
-| `device-added` | `DeviceInfo` | New device discovered during scan |
-| `device-removed` | `{ path: string }` | Device is removed/unpaired |
-| `device-connected` | `DeviceInfo` | Device connects |
-| `device-disconnected` | `DeviceInfo` | Device disconnects |
-| `device-property-changed` | `DeviceInfo` | Device property changes (RSSI, name, battery, etc.), including `org.bluez.Battery1` appearing on an already known device |
-| `error` | `{ message: string }` | Internal plugin error |
-| `dbus-error` | `{ message: string }` | D-Bus stream error (fatal, listener stops) |
-
----
-
-## Rust API
-
-### Commands
-
-`src/commands.rs` — Each function is a `#[tauri::command]`:
-
-| Command | Input | Output | BlueZ Method |
-|---------|-------|--------|-------------|
-| `list_adapters` | — | `Vec<AdapterInfo>` | `GetManagedObjects` |
-| `set_adapter_powered` | `adapter_path`, `powered: bool` | `()` | `Properties.Set` |
-| `get_adapter_state` | `adapter_path` | `AdapterInfo` | `Properties.GetAll` |
-| `start_scan` | `adapter_path` | `()` | `StartDiscovery` |
-| `stop_scan` | `adapter_path` | `()` | `StopDiscovery` |
-| `list_devices` | `adapter_path` | `Vec<DeviceInfo>` | `GetManagedObjects` |
-| `get_device_info` | `device_path` | `DeviceInfo` | `Properties.GetAll` (Device1, then Battery1 if published) |
-| `list_paired_devices` | `adapter_path` | `Vec<DeviceInfo>` | `GetManagedObjects` |
-| `connect_device` | `device_path` | `()` | `Connect` |
-| `disconnect_device` | `device_path` | `()` | `Disconnect` |
-| `bluetooth_plugin_status` | `State<BluetoothManager>` | `bool` | — |
-
-### Structures
-
-`src/models.rs`:
-
-```rust
-// Every struct sent to the frontend is serialized in camelCase
-// (`discoverableTimeout`, `legacyPairing`, `txPower`, ...), matching guest-js.
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AdapterInfo {
-    pub path: String,
-    pub address: String,
-    pub name: String,
-    pub alias: String,
-    pub class: u32,
-    pub powered: bool,
-    pub discoverable: bool,
-    pub discoverable_timeout: u32,
-    pub pairable: bool,
-    pub pairable_timeout: u32,
-    pub discovering: bool,
-    pub uuids: Vec<String>,
-    pub modalias: Option<String>,
-}
-
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct DeviceInfo {
-    pub path: String,
-    pub address: String,
-    pub name: Option<String>,
-    pub alias: Option<String>,
-    pub class: Option<u32>,
-    pub appearance: Option<u16>,
-    pub icon: Option<String>,
-    pub paired: bool,
-    pub trusted: bool,
-    pub blocked: bool,
-    pub legacy_pairing: bool,
-    pub rssi: Option<i16>,
-    pub tx_power: Option<i16>,
-    pub connected: bool,
-    pub uuids: Vec<String>,
-    pub adapter: String,
-    pub services_resolved: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub battery: Option<u8>, // org.bluez.Battery1 Percentage; None when not published
-}
-```
-
-### Error Types
-
-`src/error.rs`:
-
-```rust
-#[derive(Debug, Error)]
-pub enum Error {
-    Zbus(#[from] zbus::Error),
-    Zvariant(#[from] zbus::zvariant::Error),
-    CommandError(String),
-    NotFound(String),
-}
-```
-
-Errors implement `Serialize` (display as string) so they propagate correctly to the frontend.
-
----
-
-## Permissions
-
-### Default Permission
-
-`"bluetooth-manager:default"` — allows all Bluetooth commands:
-
-```toml
-# permissions/default.toml
-[default]
-permissions = [
-  "allow-list_adapters",
-  "allow-list_devices",
-  "allow-list_paired_devices",
-  "allow-set_adapter_powered",
-  "allow-start_scan",
-  "allow-stop_scan",
-  "allow-connect_device",
-  "allow-disconnect_device",
-  "allow-get_device_info",
-  "allow-bluetooth_plugin_status",
-]
-```
-
-### Individual Commands
-
-You can selectively allow specific commands:
-
-```jsonc
-// src-tauri/capabilities/default.json
-{
-  "permissions": [
-    "bluetooth-manager:allow-list_adapters",
-    "bluetooth-manager:allow-list_devices",
-    "bluetooth-manager:allow-start_scan",
-    "bluetooth-manager:allow-stop_scan"
-  ]
-}
-```
-
----
-
-## Examples
-
-### Minimal: List and scan
-
-```typescript
-import { listAdapters, startScan, stopScan, listDevices } from '@vasakgroup/plugin-bluetooth-manager';
-
-const adapters = await listAdapters();
-if (adapters.length === 0) throw new Error('No Bluetooth adapter');
-
-const adapter = adapters[0];
-await setAdapterPowered(adapter.path, true);
-
-// Scan for 5 seconds
-await startScan(adapter.path);
-await new Promise(r => setTimeout(r, 5000));
-await stopScan(adapter.path);
-
-const devices = await listDevices(adapter.path);
-console.log(`Found ${devices.length} device(s):`);
-devices.forEach(d => console.log(`  ${d.address} — ${d.name ?? 'Unknown'}`));
-```
-
-### Full: Pair and connect flow
-
-```typescript
-import { scanForDevices, connectDevice, listPairedDevices } from '@vasakgroup/plugin-bluetooth-manager';
-import { listen } from '@tauri-apps/api/event';
-
-// Listen for device discoveries in real time
-await listen('bluetooth-change', (event) => {
-  if (event.payload.changeType === 'device-added') {
-    console.log('Discovered:', event.payload.data.name);
-  }
-});
-
-// Scan via helper
-const devices = await scanForDevices('/org/bluez/hci0', 15000);
-
-// Find and connect to a specific device
-const target = devices.find(d => d.name === 'My Headphones');
-if (target && !target.connected) {
-  await connectDevice(target.path);
-}
-
-// Check paired devices
-const paired = await listPairedDevices('/org/bluez/hci0');
-```
-
-### React: Status indicator
-
-```tsx
-import { useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
-import { getDefaultAdapter } from '@vasakgroup/plugin-bluetooth-manager';
-
-function BluetoothIndicator() {
-  const [powered, setPowered] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const adapter = await getDefaultAdapter();
-      if (adapter) setPowered(adapter.powered);
-    })();
-
-    const unlisten = await listen('bluetooth-change', (e) => {
-      if (e.payload.changeType === 'adapter-property-changed') {
-        setPowered(e.payload.data.powered);
-      }
-    });
-
-    return () => { unlisten(); };
-  }, []);
-
-  return <div>{powered ? 'Bluetooth ON' : 'Bluetooth OFF'}</div>;
-}
-```
-
----
-
-## Troubleshooting
-
-### No adapters found
-
-1. **Check BlueZ is running**:
-   ```bash
-   systemctl status bluetooth
-   sudo systemctl start bluetooth
-   ```
-
-2. **Check Bluetooth hardware**:
-   ```bash
-   hciconfig -a     # Legacy
-   bluetoothctl show # Modern
-   ```
-
-3. **Check D-Bus access**: The plugin connects to the **system bus**. Ensure your user has permission (usually granted via the `bluetooth` group):
-   ```bash
-   sudo usermod -aG bluetooth $USER
-   ```
-
-4. **Check logs**: The plugin logs to both stdout (terminal) and `~/.logs/vasak/bluetooth.log`. Set the env var for verbose output:
-   ```bash
-   RUST_LOG=tauri_plugin_bluetooth_manager=trace ./your-app
-   ```
-
-### Devices not found during scan
-
-1. Ensure the adapter is **powered on**: `await setAdapterPowered(path, true)`
-2. Ensure the adapter is **discoverable**: `bluetoothctl discoverable on`
-3. Check `~/.logs/vasak/bluetooth.log` for deserialization errors from BlueZ
-4. Some adapters require that you be in the `bluetooth` group
-
----
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── lib.rs          # Plugin entry point, Tauri builder, command registration
-├── commands.rs     # All #[tauri::command] functions (D-Bus calls to BlueZ)
-├── desktop.rs      # Signal listener, initialization, helper extractors
-├── error.rs        # Custom error type (thiserror + serde::Serialize)
-├── models.rs       # AdapterInfo, DeviceInfo, BluetoothChange structs
-├── properties.rs   # Property readers + AdapterInfo/DeviceInfo builders (unit-tested, no D-Bus)
-└── logging.rs      # Tracing subscriber (stdout + file), OnceLock-safe init
-
-guest-js/
-└── index.ts        # TypeScript API, types, helpers, event constants
-```
-
-### Build
+### Debian / Ubuntu (.deb)
 
 ```bash
-# JS/TS bindings
-bun install && bun run build
-
-# Rust library
-cargo build
-
-# Full Tauri app
-cargo tauri dev
+wget https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager/releases/download/v{{VERSION}}/vasak-tauri-plugin-bluetooth-manager_{{VERSION}}_amd64.deb
+sudo apt install ./vasak-tauri-plugin-bluetooth-manager_{{VERSION}}_amd64.deb
 ```
 
-### Testing
-
-The unit tests (`src/properties.rs`, `src/logging.rs`) build the property maps by hand and run without a bus, so `cargo test` works on any machine. Exercising the plugin end to end still needs a running D-Bus system bus with BlueZ:
+### Desde fuente
 
 ```bash
-# Ensure BlueZ is available
-bluetoothctl --version
+git clone https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager.git
+cd tauri-plugin-bluetooth-manager
 
-# Run Rust tests
-cargo test
+# Build Rust (plugin Tauri)
+cargo build --release --locked
+
+# Tests
+cargo test --locked
+
+# Publicar (crates.io + npm)
+cargo publish --locked
+npm publish
 ```
 
---- 
+### Flatpak / AppImage
 
-## License
+> *Placeholder: añadir cuando exista paquete Flatpak o AppImage oficial.*
 
-GPL-3.0-or-later — Vasak Group
+---
+
+## Uso rápido
+
+```bash
+# Se lanza automáticamente (systemd --user) o manualmente:
+tauri-plugin-bluetooth-manager
+```
+
+### Atajos / flags principales
+
+| Acción | Comando / Tecla |
+|--------|-----------------|
+| Acción principal | `tauri-plugin-bluetooth-manager` |
+| Configuración | `tauri-plugin-bluetooth-manager --config` |
+| Ayuda | `tauri-plugin-bluetooth-manager --help` |
+
+> **Captura:** `assets/demo.gif` *(placeholder — sustituir por GIF real)*
+
+---
+
+## Configuración
+
+### Archivo de configuración
+
+```
+~/.config/vasak/tauri-plugin-bluetooth-manager.toml
+```
+
+### Variables de entorno
+
+| Variable | Descripción | Por defecto |
+|----------|-------------|-------------|
+| `VASAK_DEBUG` | Activa logs de depuración en consola | `false` |
+| `VASAK_PROFILE` | Perfil de rendimiento: `balanced`, `performance`, `power-save` | `balanced` |
+
+### Integración con `tauri-plugin-config-manager`
+
+- Esquemas de color: respeta `--ui-primary`, `--ui-surface`, `--ui-focus`, `--ui-on-surface`, `--ui-border`
+- Tema de iconos: usa el tema del sistema (`vasakos-icon-theme`) vía `vicon` lookup
+- Radio de bordes: variable CSS `--ui-radius` del esquema activo (por defecto 12px)
+- Fuentes: `--ui-font-family`, `--ui-font-size-base` desde el esquema
+
+---
+
+## Desarrollo
+
+### Requisitos
+
+- **Rust:** `rustup` toolchain estable (`rust-toolchain.toml` fija la versión)
+- **Node / bun:** `bun` ≥ 1.1 (nunca npm/yarn/pnpm para apps Tauri)
+- **Sistema:** `pkg-config`, `libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, `libssl-dev`
+- *`libssl-dev` para TLS, dependencias específicas del plugin*
+
+### Dependencias de desarrollo
+
+#### Sistema (paquetes Arch / Debian / Fedora)
+
+`base-devel`, `pkgconf`, `libssl-dev`, `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `libpipewire-0.3-dev`, `libwireplumber-0.5-dev`, `libdbus-1-dev`, `libudev-dev`, `libxkbcommon-dev`, `libwayland-dev`, `meson`, `ninja`, `clang`, `lld`
+
+#### Rust
+
+`rustup` → `stable` + `rustfmt` + `clippy`
+
+#### Node
+
+**Solo `bun`** (nunca npm/yarn/pnpm para apps Tauri). `bun --version` ≥ 1.1
+
+#### Herramientas CLI
+
+`just` (command runner), `cargo-binstall` (opcional), `cargo-llvm-cov` (para cobertura)
+
+### Correr la app en desarrollo
+
+```bash
+# Frontend (Vite dev server + Tauri dev)
+bun run tauri dev
+
+# Solo frontend (Vite)
+bun run dev
+
+# Solo backend (cargo watch)
+cargo watch -x "run --bin tauri-plugin-bluetooth-manager"
+```
+
+### Compilar / Build de release
+
+```bash
+# Build completo (frontend + backend + bundle)
+bun run tauri build
+
+# Solo frontend (para testear bundle después)
+bun run build
+
+# Solo backend Rust (binario optimizado)
+cargo build --release --locked
+
+# Paquetes nativos
+# Arch: makepkg -sf en PKGBUILDS/tauri-plugin-bluetooth-manager/
+# Debian: cargo deb --no-build --target-dir src-tauri/target/release/debian
+```
+
+### Targets principales
+
+```bash
+# Desarrollo (Tauri dev server + hot reload)
+bun run dev
+
+# Build producción
+bun run build
+
+# Solo frontend
+bun run build:frontend
+
+# Solo backend Rust
+cargo build --release --locked
+
+# Lint + tipos (pre-commit / CI)
+bunx --bun biome check .
+bunx vue-tsc --noEmit
+cargo fmt --check
+```
+
+### Pruebas
+
+```bash
+# Tests Rust
+cargo test -p tauri-plugin-bluetooth-manager --locked
+
+# Tests JS (si tiene bindings)
+bun test
+```
+
+### Convención de commits
+
+[Conventional Commits](https://www.conventionalcommits.org/es/v1.0.0/):
+
+```
+<tipo>(<ámbito>): <descripción corta>
+
+[cuerpo opcional]
+
+[pie opcional: Closes #N]
+```
+
+Tipos habituales: `feat`, `fix`, `bugfix`, `docs`, `ci`, `chore`, `security`, `refactor`, `perf`, `test`.
+
+### Cómo abrir PR
+
+1. Rama desde `origin/main`:
+   ```bash
+   git worktree add -b feat/tema ~/wt/tauri-plugin-bluetooth-manager-tema origin/main
+   ```
+2. Prefijos de rama: `fix/`, `feat/`, `bugfix/`, `docs/`, `ci/`, `chore/`, `security/`
+3. Escribe el fix → **`qa` escribe las pruebas** (fallan sin el fix) → suite verde → abre PR
+4. Al abrir PR, **cuatro cosas obligatorias**:
+   - Asignado a `JoaquinDecima`
+   - Etiqueta `enhancement` o `bug` (+ `ci` / `dependencies` si aplica)
+   - Añadido al proyecto «VasakOS Roadmap»
+   - Status **In Progress**
+
+---
+
+## Arquitectura (texto)
+
+### Crates / módulos principales
+
+| `tauri-plugin-bluetooth-manager` | Plugin Tauri: Rust backend + JS bindings |
+
+### Interfaces D-Bus / zbus expuestas
+
+| `org.vasak.bluetooth-manager` | Métodos específicos del plugin | Funcionalidad expuesta a apps Tauri |
+
+### Puntos de extensión
+
+- **Plugins:** Sistema de plugins modular
+- **Hooks:** Hooks de ciclo de vida
+- **API pública Rust:** API pública del crate principal
+
+### Features / Cargo features
+
+| Feature | Descripción | Default |
+|---------|-------------|---------|
+| `async` | API asíncrona (futures) | ✓ |
+| `blocking` | API bloqueante para compatibilidad | |
+
+Y para apps Tauri+Vue: features del `tauri.conf.json` → `bundle` / `plugins` / `allowlist` (capabilities).
+
+---
+
+## Pruebas y calidad
+
+- **Cobertura objetivo:** ≥ 80 % del código nuevo (SonarCloud Quality Gate)
+- **Informes:** GitHub Actions → pestaña *SonarCloud Code Analysis* → enlace a SonarCloud
+- **Añadir pruebas:** ver `AGENTS.md` sección 9 (mapa de repos y comandos de prueba)
+- **Regla:** toda corrección lleva prueba escrita por `qa` que falla sin el fix
+
+---
+
+## Contribuir
+
+- **Guía:** [.github/CONTRIBUTING.md](https://github.com/Vasak-OS/.github/blob/main/CONTRIBUTING.md)
+- **Plantillas de issue:** [.github/ISSUE_TEMPLATE/](https://github.com/Vasak-OS/.github/tree/main/ISSUE_TEMPLATE)
+- **Código de conducta:** [CODE_OF_CONDUCT.md](https://github.com/Vasak-OS/.github/blob/main/CODE_OF_CONDUCT.md)
+
+---
+
+## Contribuidores
+
+> **Actualizado automáticamente en CI** — muestra los avatares de quienes han aportado código a este repo.
+
+<div align="center">
+  
+</div>
+
+[Ver todos los contribuidores](https://github.com/Vasak-OS/tauri-plugin-bluetooth-manager/graphs/contributors)
+
+---
+
+## Donadores / Sponsors
+
+[![Sponsors](https://img.shields.io/github/sponsors/Vasak-OS?style=flat&label=Sponsors)](https://github.com/sponsors/Vasak-OS)
+
+> **Backers:** *Actualizado automáticamente en CI desde GitHub Sponsors / OpenCollective / Polar.*
+
+[💖 Donar al proyecto](https://github.com/sponsors/Vasak-OS)
+
+---
+
+## Licencia
+
+`MIT` — Copyright © 2026 **Vasak-OS Contributors**
+
+[Ver licencia completa](LICENSE)
